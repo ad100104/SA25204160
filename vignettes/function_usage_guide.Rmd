@@ -21,7 +21,7 @@ vignette: >
 ```{r}
 # 需先安装依赖包（已在DESCRIPTION声明，会自动下载）
 install.packages(c("devtools", "torch", "dplyr"))
-devtools::install_github("你的GitHub用户名/SA25204160", build_vignettes = TRUE)
+devtools::install_github("ad100104/SA25204160", build_vignettes = TRUE)
 library(SA25204160)
 ```
 
