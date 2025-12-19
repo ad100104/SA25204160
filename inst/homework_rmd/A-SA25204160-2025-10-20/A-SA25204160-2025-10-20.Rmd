@@ -1,0 +1,404 @@
+---
+title: "A-SA25204160-2025-10-20"
+author: "SA25204160"
+date: "2025-10-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question
+
+### T_1
+
+在总共N=1000个假设中，950 个是零假设，50 个是备择假设。任何零假设下的 p 值服从均匀分布（使用R函数runif），任何备择假设下的 p 值服从参数为 0.1 和 1 的 Beta 分布（使用 R 函数 rbeta）。
+
+获取 Bonferroni 校正后的 p 值和 Benjamini-Hochberg (B-H) 校正后的 p 值。
+
+基于m=10000次模拟重复，在名义水平α = 0.1 下，计算每种校正方法的以下指标：FWER,FDR,TPR
+
+你应该将一个包含 6 个数值的表格输出为3×2 格式（列名：Bonferroni correction, B-H correction；行名：FWER, FDR, TPR）。并对结果进行评论。
+
+### 8.4
+
+参照 boot 包中提供的空调数据集aircondit这12个观测值是空调设备故障间隔时间（单位：小时）[68, 例 1.1]：
+
+3, 5, 7, 18, 43, 85, 91, 98, 100, 130, 230, 487。
+
+假设故障间隔时间服从指数模型Exp(λ)。求风险率λ的最大似然估计，并使用自助法估计该估计量的偏差和标准误。
+
+### 8.7
+
+参照练习 8.6。Efron 和 Tibshirani 讨论了以下例子 [91,第7章]。五维分数数据有一个5×5 的协方差矩阵 Σ，其特征值为正且满足$\lambda _1>...>\lambda _5$。在主成分分析中：
+
+$$\theta =\frac{\lambda _1}{\sum_{j=1}^{5} \lambda_j} $$
+
+度量了由第一主成分解释的方差比例。令$ \hat{\lambda} _1>...> \hat{\lambda} _5$是$\hat{\Sigma}$的特征值，其中$\hat{\Sigma}$是$\Sigma$的最大似然估计。计算$\theta$的样本估计值
+
+$$\hat{\theta} =\frac{\hat{\lambda} _1}{\sum_{j=1}^{5} \hat{\lambda}_j} $$
+
+使用自助法估计$\hat{\theta}$的偏差和标准误差
+
+## Answer
+
+### T_1
+#### 1
+设置参数：N=1000，其中950个零假设，50个备择假设。模拟重复次数m=10000，名义水平α=0.1。
+```{r echo=FALSE}
+# 设置参数
+set.seed(123)  # 设置随机种子以保证结果可重现
+N <- 1000      # 总假设数
+n_null <- 950  # 零假设数量
+n_alt <- 50    # 备择假设数量
+m <- 10000     # 模拟重复次数
+alpha <- 0.1   # 名义水平
+
+# 初始化存储结果的矩阵
+results_bonf <- matrix(0, m, 3)  # Bonferroni方法的结果
+results_bh <- matrix(0, m, 3)    # B-H方法的结果
+colnames(results_bonf) <- colnames(results_bh) <- c("FWER", "FDR", "TPR")
+```
+
+#### 2
+步骤一：
+
+每次模拟中：
+
+生成950个零假设的p值：来自均匀分布runif(950)
+
+生成50个备择假设的p值：来自rbeta(50, 0.1, 1)
+
+合并得到1000个p值，并记录哪些是零假设（前950个）和备择假设（后50个）
+
+步骤二：
+
+对每次模拟的p值进行两种校正：
+
+Bonferroni校正：p_adj_bonf = pmin(p * N, 1)
+
+B-H校正：使用p.adjust(p, method="BH")
+
+步骤三：
+
+在名义水平α=0.1下，根据校正后的p值判断是否拒绝每个假设。
+
+计算每次模拟的：
+
+FWER: 至少犯一次第一类错误的概率（即至少错误拒绝一个零假设）。
+
+FDR: 错误发现率，即被错误拒绝的零假设数除以总的拒绝数（如果总的拒绝数为0，则FDR定义为0）。
+
+TPR: 真正例率，即被正确拒绝的备择假设数除以总的备择假设数（50）。
+
+```{r echo=FALSE}
+# 开始模拟
+for (i in 1:m) {
+    # 零假设的p值: 均匀分布
+    p_null <- runif(n_null)
+    # 备择假设的p值: Beta(0.1, 1)分布
+    p_alt <- rbeta(n_alt, 0.1, 1)
+    
+    # 合并所有p值
+    p_values <- c(p_null, p_alt)
+    
+    # 记录真实的假设状态 (0=零假设, 1=备择假设)
+    truth <- c(rep(0, n_null), rep(1, n_alt))
+    # Bonferroni调整
+    p_bonf <- p.adjust(p_values, method = "bonferroni")
+    
+    # Benjamini-Hochberg调整
+    p_bh <- p.adjust(p_values, method = "BH")
+    
+    # 步骤3: 在alpha=0.1水平下进行决策
+    # Bonferroni方法
+    reject_bonf <- as.numeric(p_bonf <= alpha)
+    # B-H方法
+    reject_bh <- as.numeric(p_bh <= alpha)
+    # 对于Bonferroni方法
+    if (sum(reject_bonf) > 0) {
+        # 假阳性数 (错误拒绝的零假设)
+        FP_bonf <- sum(reject_bonf[truth == 0])
+        # 真阳性数 (正确拒绝的备择假设)
+        TP_bonf <- sum(reject_bonf[truth == 1])
+        
+        # FWER: 至少犯一次第一类错误
+        results_bonf[i, "FWER"] <- as.numeric(FP_bonf > 0)
+        # FDR: 假发现率
+        results_bonf[i, "FDR"] <- FP_bonf / sum(reject_bonf)
+        # TPR: 真阳性率 (灵敏度)
+        results_bonf[i, "TPR"] <- TP_bonf / n_alt
+    } else {
+        # 如果没有拒绝任何假设
+        results_bonf[i, "FWER"] <- 0
+        results_bonf[i, "FDR"] <- 0
+        results_bonf[i, "TPR"] <- 0
+    }
+    
+    # 对于B-H方法
+    if (sum(reject_bh) > 0) {
+        # 假阳性数
+        FP_bh <- sum(reject_bh[truth == 0])
+        # 真阳性数
+        TP_bh <- sum(reject_bh[truth == 1])
+        
+        # FWER
+        results_bh[i, "FWER"] <- as.numeric(FP_bh > 0)
+        # FDR
+        results_bh[i, "FDR"] <- FP_bh / sum(reject_bh)
+        # TPR
+        results_bh[i, "TPR"] <- TP_bh / n_alt
+    } else {
+        # 如果没有拒绝任何假设
+        results_bh[i, "FWER"] <- 0
+        results_bh[i, "FDR"] <- 0
+        results_bh[i, "TPR"] <- 0
+    }
+}
+```
+
+
+
+#### 3
+重复m=10000次，计算FWER、FDR和TPR的平均值。
+```{r echo=FALSE}
+avg_bonf <- colMeans(results_bonf)
+avg_bh <- colMeans(results_bh)
+
+# 创建结果表格
+result_table <- matrix(c(avg_bonf, avg_bh), nrow = 3, ncol = 2)
+colnames(result_table) <- c("Bonferroni correction", "B-H correction")
+rownames(result_table) <- c("FWER", "FDR", "TPR")
+
+# 输出结果
+print("模拟结果:")
+print(result_table)
+
+# 结果评论
+cat("\n结果评论:\n")
+cat("1. FWER (家族错误率):\n")
+cat("   Bonferroni方法严格控制FWER在名义水平α=0.1以下\n")
+cat("   B-H方法不保证控制FWER，但通常FWER会低于α\n\n")
+
+cat("2. FDR (错误发现率):\n")
+cat("   B-H方法专门设计用于控制FDR，因此其FDR应该接近或低于α\n")
+cat("   Bonferroni方法通常会产生更低的FDR，但可能过于保守\n\n")
+
+cat("3. TPR (真阳性率):\n")
+cat("   B-H方法通常有更高的TPR，因为它比Bonferroni方法更宽松\n")
+cat("   Bonferroni方法由于过于保守，TPR通常较低\n\n")
+
+cat("4. 总体比较:\n")
+cat("   Bonferroni: 更保守，FWER控制严格，但检验力较低\n")
+cat("   B-H: 更灵活，在控制FDR的同时保持较高的检验力\n")
+```
+
+### 8.4
+#### 8.4.1
+计算原始数据的MLE
+```{r echo=FALSE}
+# 加载所需的包
+library(boot)
+
+# 空气调节设备故障间隔时间数据
+failure_times <- c(3, 5, 7, 18, 43, 85, 91, 98, 100, 130, 230, 487)
+
+# 计算λ的MLE（最大似然估计）
+# 对于指数分布，λ的MLE是样本均值的倒数
+lambda_mle <- 1 / mean(failure_times)
+cat("λ的MLE:", lambda_mle, "\n")
+```
+
+#### 8.4.2
+进行bootstrap（例如1000次），每次从数据中有放回地抽取12个观测值
+```{r echo=FALSE}
+# 定义用于bootstrap的函数
+# 这个函数应该接受数据和索引，返回我们感兴趣的统计量
+lambda_estimator <- function(data, indices) {
+  sample_data <- data[indices]  # 有放回抽样
+  return(1 / mean(sample_data)) # 计算该bootstrap样本的λ估计值
+}
+
+# 执行bootstrap
+set.seed(123)  # 设置随机种子以保证结果可重现
+boot_results <- boot(data = failure_times, 
+                     statistic = lambda_estimator, 
+                     R = 1000)  # R是bootstrap重复次数
+
+# 查看bootstrap结果
+print(boot_results)
+```
+
+#### 8.4.3
+计算bootstrap估计的偏差和标准误差
+```{r echo=FALSE}
+# 提取偏差和标准误的估计
+bias_estimate <- mean(boot_results$t) - boot_results$t0
+se_estimate <- sd(boot_results$t)
+
+cat("\nBootstrap结果:\n")
+cat("原始估计值 (λ的MLE):", boot_results$t0, "\n")
+cat("偏差估计:", bias_estimate, "\n")
+cat("标准误估计:", se_estimate, "\n")
+
+```
+
+### 8.7
+
+#### 8.7.1
+加载boot包，获取scor数据。(因为boot包加载有问题，所以手动添加数据集)
+```{r echo=FALSE}
+scor <- structure(
+    list(
+      mec = c(77, 63, 75, 55, 63, 53, 51, 59, 62, 64, 52, 
+          55, 50, 65, 31, 60, 44, 42, 62, 31, 44, 49, 12, 49, 54, 54, 44, 
+          18, 46, 32, 30, 46, 40, 31, 37, 42, 39, 43, 40, 39, 52, 51, 34, 
+          42, 41, 41, 42, 40, 42, 44, 45, 44, 46, 46, 44, 45, 45, 45, 47, 
+          50, 47, 47, 46, 49, 49, 50, 54, 54, 58, 60, 60, 64, 65, 68, 68, 
+          69, 73, 73, 75, 77, 79, 80, 82, 86, 88, 90, 92, 94),
+  vec = c(82, 78, 73, 72, 63, 61, 67, 
+          72, 63, 69, 62, 64, 64, 67, 47, 68, 50, 62, 68, 52, 53, 58, 20, 
+          58, 59, 59, 57, 33, 56, 49, 48, 58, 51, 49, 53, 55, 53, 59, 55, 
+          56, 60, 59, 50, 56, 56, 57, 57, 56, 58, 60, 60, 60, 62, 62, 62, 
+          62, 63, 63, 64, 66, 65, 65, 65, 67, 67, 68, 70, 71, 72, 73, 73, 
+          74, 75, 76, 77, 77, 78, 79, 80, 81, 82, 83, 85, 87, 89, 91, 93, 
+          95),
+  alg = c(67, 80, 
+          71, 63, 65, 72, 72, 67, 70, 69, 62, 68, 60, 70, 52, 64, 63, 69, 
+          61, 63, 62, 63, 47, 56, 59, 60, 57, 47, 54, 53, 52, 56, 54, 53, 
+          55, 56, 57, 58, 57, 57, 58, 59, 54, 57, 57, 58, 58, 58, 59, 60, 
+          60, 60, 61, 61, 61, 62, 62, 62, 63, 64, 64, 64, 64, 65, 65, 66, 
+          67, 68, 69, 70, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 
+          82, 84, 86, 88, 90, 92),
+  ana = c(67, 70, 66, 70, 70, 72, 66, 71, 68, 69, 62, 67, 61, 72, 
+          52, 64, 65, 69, 62, 63, 62, 62, 47, 57, 58, 60, 57, 47, 54, 53, 
+          52, 56, 54, 53, 55, 56, 57, 58, 57, 57, 58, 59, 54, 57, 57, 58, 
+          58, 58, 59, 60, 60, 60, 61, 61, 61, 62, 62, 62, 63, 64, 64, 64, 
+          64, 65, 65, 66, 67, 68, 69, 70, 70, 71, 72, 73, 74, 75, 76, 77, 
+          78, 79, 80, 81, 82, 84, 86, 88, 90, 92),
+  sta = c(81, 81, 81, 68, 63, 73, 72, 69, 69, 
+          73, 61, 70, 58, 71, 41, 66, 57, 61, 61, 51, 61, 55, 33, 54, 56, 
+          59, 55, 40, 52, 48, 44, 54, 49, 47, 51, 52, 51, 53, 51, 51, 53, 
+          54, 48, 51, 51, 52, 52, 52, 53, 54, 54, 54, 55, 55, 55, 56, 56, 
+          56, 57, 58, 58, 58, 58, 59, 59, 60, 61, 62, 63, 64, 64, 65, 66, 
+          67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 78, 80, 82, 84, 86)
+    ),
+    class = "data.frame",
+    row.names = 1:88
+)
+# 查看数据基本信息
+sapply(scor, length)
+cat("数据集维度:", dim(scor), "\n")
+cat("变量名称:", names(scor), "\n")
+cat("\n前6行数据:\n")
+print(head(scor))
+```
+
+#### 8.7.2
+计算样本协方差矩阵，然后计算特征值，进而计算θ的估计值（第一主成分解释的方差比例）。
+```{r echo=FALSE}
+# 计算样本协方差矩阵和特征值
+scor_matrix <- as.matrix(scor)
+sample_cov <- cov(scor)
+eigen_vals <- eigen(sample_cov)$values
+
+# 计算θ的估计值
+# θ = 第一主成分解释的方差比例
+theta_hat <- eigen_vals[1] / sum(eigen_vals)
+cat("\nθ的样本估计值:", theta_hat, "\n")
+
+```
+
+#### 8.7.3
+使用bootstrap来估计θ估计值的偏差和标准误。
+```{r echo=FALSE}
+# 特征值分析
+cat("\n特征值分析:\n")
+cat("样本协方差矩阵的特征值:", round(eigen_vals, 4), "\n")
+cat("各主成分解释的方差比例:\n")
+cumulative_prop <- 0
+for(i in 1:length(eigen_vals)) {
+  prop <- eigen_vals[i] / sum(eigen_vals)
+  cumulative_prop <- cumulative_prop + prop
+  cat(paste0("第", i, "主成分: ", round(prop * 100, 2), 
+             "% (累计: ", round(cumulative_prop * 100, 2), "%)\n"))
+}
+
+# 定义用于bootstrap的函数
+theta_estimator <- function(data, indices) {
+  sample_data <- data[indices, ]  # 有放回抽样
+  sample_cov <- cov(sample_data)  # 计算样本协方差矩阵
+  eigen_vals <- eigen(sample_cov)$values  # 计算特征值
+  return(eigen_vals[1] / sum(eigen_vals))  # 返回θ估计值
+}
+
+# 执行bootstrap
+set.seed(123)  # 设置随机种子保证结果可重现
+boot_results <- boot(data = scor, 
+                     statistic = theta_estimator, 
+                     R = 1000)  # 1000次bootstrap重复
+
+# 查看bootstrap结果
+cat("\nBootstrap结果摘要:\n")
+print(boot_results)
+
+# 提取偏差和标准误的估计
+bias_estimate <- mean(boot_results$t) - boot_results$t0
+se_estimate <- sd(boot_results$t)
+
+cat("\n详细Bootstrap分析:\n")
+cat("原始估计值 (θ):", round(boot_results$t0, 4), "\n")
+cat("Bootstrap估计值均值:", round(mean(boot_results$t), 4), "\n")
+cat("偏差估计:", round(bias_estimate, 4), "\n")
+cat("标准误估计:", round(se_estimate, 4), "\n")
+
+# 计算相对偏差
+relative_bias <- (bias_estimate / boot_results$t0) * 100
+cat("相对偏差:", round(relative_bias, 2), "%\n")
+
+# 可视化结果
+par(mfrow = c(1, 2))  # 设置1行2列的图形布局
+
+# Bootstrap分布直方图
+hist(boot_results$t, breaks = 30, 
+     main = "Bootstrap分布 - θ估计值",
+     xlab = "θ估计值", 
+     ylab = "频率",
+     col = "lightblue",
+     border = "black")
+abline(v = boot_results$t0, col = "red", lwd = 2, lty = 2)
+abline(v = mean(boot_results$t), col = "blue", lwd = 2, lty = 2)
+legend("topright", 
+       legend = c(paste("原始估计值:", round(boot_results$t0, 4)),
+                  paste("Bootstrap均值:", round(mean(boot_results$t), 4))),
+       col = c("red", "blue"), 
+       lty = 2, lwd = 2)
+
+# 特征值碎石图
+plot(1:length(eigen_vals), eigen_vals, 
+     type = "b", pch = 19, 
+     main = "特征值碎石图",
+     xlab = "主成分序号", 
+     ylab = "特征值",
+     col = "darkred")
+abline(h = 1, col = "gray", lty = 2)  # 特征值=1的参考线（Kaiser准则）
+text(1:length(eigen_vals), eigen_vals, 
+     labels = round(eigen_vals, 2), pos = 3, cex = 0.8)
+
+# 恢复图形参数
+par(mfrow = c(1, 1))
+
+# 计算置信区间
+cat("\n计算Bootstrap置信区间...\n")
+boot_ci <- boot.ci(boot_results, type = c("norm", "basic", "perc", "bca"))
+print(boot_ci)
+# 最终结果总结
+cat("\n=== 练习8.7 结果总结 ===\n")
+cat("数据集: scor (88名学生，5门科目)\n")
+cat("θ的原始估计值:", round(theta_hat, 4), "\n")
+cat("Bootstrap偏差估计:", round(bias_estimate, 4), "\n")
+cat("Bootstrap标准误估计:", round(se_estimate, 4), "\n")
+```
+
+

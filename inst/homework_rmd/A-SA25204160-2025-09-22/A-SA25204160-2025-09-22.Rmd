@@ -1,0 +1,333 @@
+---
+title: "A-SA25204160-9-22"
+author: "SA25204160"
+date: "2025-09-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question
+Exercises 3.4, 3.5, 3.7, 3.11, 3.12 (pages 96-97, Statistical Computing with R, 2nd edition).
+
+
+## Answer
+### 3.4 Rayleigh分布样本生成与验证
+#### 3.4.1 基于逆变换法的Rayleigh分布样本生成
+本实验通过逆变换法生成不同尺度参数σ下的Rayleigh分布样本，并验证生成样本的统计特性。
+```{r , echo=FALSE}
+# 设置参数
+sigma_values <- c(0.5, 1, 2, 3)  # 不同的sigma值
+n <- 10000  # 每个分布生成的样本数量
+# 创建图形布局
+par(mfrow = c(2, 2))
+# 对每个sigma值进行循环
+for (sigma in sigma_values) {
+  # 使用逆变换法生成Rayleigh分布样本
+  # Rayleigh分布的CDF: F(x) = 1 - exp(-x^2/(2*sigma^2))
+  # 逆变换: x = sigma * sqrt(-2 * log(1 - u)), 其中u ~ Uniform(0,1)
+  u <- runif(n)
+  samples <- sigma * sqrt(-2 * log(1 - u))
+  
+  # 绘制直方图
+  hist(samples, breaks = 50, prob = TRUE, 
+       main = paste("Rayleigh Distribution (σ =", sigma, ")"),
+       xlab = "x", col = "lightblue")
+  
+  # 添加理论密度曲线
+  x <- seq(0, max(samples), length.out = 1000)
+  y <- (x / sigma^2) * exp(-x^2 / (2 * sigma^2))
+  lines(x, y, col = "red", lwd = 2)
+  
+  # 计算样本众数（直方图中频率最高的区间的中点）
+  hist_info <- hist(samples, breaks = 50, plot = FALSE)
+  sample_mode <- hist_info$mids[which.max(hist_info$counts)]
+  
+  # 添加理论众数（σ）和样本众数的垂直线
+  abline(v = sigma, col = "red", lwd = 2, lty = 2)  # 理论众数
+  abline(v = sample_mode, col = "blue", lwd = 2, lty = 2)  # 样本众数
+  
+  # 添加图例
+  legend("topright", 
+         legend = c(paste("理论众数 σ =", sigma), 
+                   paste("样本众数 =", round(sample_mode, 3))),
+         col = c("red", "blue"), lty = 2, lwd = 2)
+  
+  # 输出结果
+  cat("σ =", sigma, "\n")
+  cat("理论众数:", sigma, "\n")
+  cat("样本众数:", round(sample_mode, 4), "\n")
+  cat("相对误差:", round(abs(sample_mode - sigma)/sigma * 100, 2), "%\n")
+  cat("--------------------\n")
+}
+```
+
+#### 3.4.2 Rayleigh分布生成算法正确性验证
+使用Kolmogorov-Smirnov检验验证生成样本是否服从理论Rayleigh分布。
+```{r , echo=FALSE}
+# 重置图形参数
+par(mfrow = c(1, 1))
+
+# 验证生成算法的正确性（使用KS检验）
+cat("\n=== KS检验结果 ===\n")
+for (sigma in sigma_values) {
+  # 生成新样本进行检验
+  u <- runif(n)
+  test_samples <- sigma * sqrt(-2 * log(1 - u))
+  
+  # 与理论Rayleigh分布进行KS检验
+  ks_test <- ks.test(test_samples, function(x) {
+    1 - exp(-x^2 / (2 * sigma^2))
+  })
+  
+  cat("σ =", sigma, ": p-value =", round(ks_test$p.value, 4), "\n")
+  if (ks_test$p.value > 0.05) {
+    cat("  样本来自Rayleigh分布（不能拒绝原假设）\n")
+  } else {
+    cat("  样本可能不是来自Rayleigh分布\n")
+  }
+}
+```
+
+### 3.5 离散分布抽样方法比较
+#### 3.5.1 使用逆变换方法生成样本
+实现逆变换法生成指定离散分布的随机样本。
+```{r , echo=FALSE}
+# 定义概率质量函数
+x_values <- 0:4
+probabilities <- c(0.1, 0.2, 0.2, 0.2, 0.3)
+
+# 方法1：使用逆变换方法生成样本
+inverse_transform_sample <- function(n, values, probs) {
+  # 计算累积分布函数
+  cdf <- cumsum(probs)
+  
+  # 生成均匀分布的随机数
+  u <- runif(n)
+  
+  # 使用逆变换方法生成样本
+  sample <- sapply(u, function(u_val) {
+    values[min(which(cdf >= u_val))]
+  })
+  
+  return(sample)
+}
+
+# 生成1000个样本
+set.seed(123)  # 设置随机种子以便结果可重现
+sample1 <- inverse_transform_sample(1000, x_values, probabilities)
+```
+
+#### 3.5.2 生成离散分布样本
+```{r , echo=FALSE}
+set.seed(123)  # 使用相同的随机种子
+sample2 <- sample(x_values, size = 1000, replace = TRUE, prob = probabilities)
+```
+
+
+#### 3.5.3 两种抽样方法的精度比较与分析
+通过相对频率表和统计检验比较两种方法的抽样效果。
+```{r , echo=FALSE}
+# 构建相对频率表并比较
+compare_results <- function(sample, method_name) {
+  # 计算经验频率
+  empirical_freq <- table(sample) / length(sample)
+  
+  # 创建比较表格
+  comparison <- data.frame(
+    x = x_values,
+    Theoretical = probabilities,
+    Empirical = as.numeric(empirical_freq[match(x_values, names(empirical_freq))]),
+    Difference = as.numeric(empirical_freq[match(x_values, names(empirical_freq))]) - probabilities
+  )
+  
+  cat("方法:", method_name, "\n")
+  cat("样本大小:", length(sample), "\n\n")
+  print(comparison)
+  cat("\n")
+  
+  return(comparison)
+}
+
+# 比较两种方法的结果
+result1 <- compare_results(sample1, "逆变换方法")
+result2 <- compare_results(sample2, "R sample函数")
+
+# 可视化比较结果
+par(mfrow = c(1, 2))
+
+# 逆变换方法的结果可视化
+barplot(rbind(result1$Theoretical, result1$Empirical), 
+        beside = TRUE, 
+        names.arg = x_values,
+        col = c("lightblue", "lightcoral"),
+        main = "逆变换方法: 理论与经验概率比较",
+        xlab = "x值", ylab = "概率")
+legend("topright", legend = c("理论概率", "经验概率"), 
+       fill = c("lightblue", "lightcoral"))
+
+# R sample函数的结果可视化
+barplot(rbind(result2$Theoretical, result2$Empirical), 
+        beside = TRUE, 
+        names.arg = x_values,
+        col = c("lightblue", "lightgreen"),
+        main = "R sample函数: 理论与经验概率比较",
+        xlab = "x值", ylab = "概率")
+legend("topright", legend = c("理论概率", "经验概率"), 
+       fill = c("lightblue", "lightgreen"))
+
+# 重置图形参数
+par(mfrow = c(1, 1))
+
+# 计算两种方法的均方误差
+mse1 <- mean(result1$Difference^2)
+mse2 <- mean(result2$Difference^2)
+
+cat("均方误差比较:\n")
+cat("逆变换方法 MSE:", round(mse1, 6), "\n")
+cat("R sample函数 MSE:", round(mse2, 6), "\n")
+
+# 卡方检验检验拟合优度
+chi_test1 <- chisq.test(table(sample1), p = probabilities)
+chi_test2 <- chisq.test(table(sample2), p = probabilities)
+
+cat("\n卡方检验结果:\n")
+cat("逆变换方法: 卡方统计量 =", round(chi_test1$statistic, 4), 
+    ", p值 =", round(chi_test1$p.value, 4), "\n")
+cat("R sample函数: 卡方统计量 =", round(chi_test2$statistic, 4), 
+    ", p值 =", round(chi_test2$p.value, 4), "\n")
+```
+
+### 3.7 Beta分布接受-拒绝抽样法
+
+#### 3.7.1 接受-拒绝算法生成Beta(3,2)分布样本
+
+```{r , echo=FALSE}
+# 定义接受-拒绝法生成Beta(a,b)分布的函数
+rbeta_ar <- function(n, a, b) {
+  # 计算Beta分布的最大值点
+  mode <- (a - 1) / (a + b - 2)
+  
+  # 计算最大值点处的密度值（用于构造包络函数）
+  max_density <- dbeta(mode, a, b)
+  
+  samples <- numeric(n)
+  count <- 0
+  
+  while (count < n) {
+    # 从均匀分布生成候选点
+    x_candidate <- runif(1)
+    y_candidate <- runif(1) * max_density
+    
+    # 接受-拒绝判断
+    if (y_candidate <= dbeta(x_candidate, a, b)) {
+      count <- count + 1
+      samples[count] <- x_candidate
+    }
+  }
+  
+  return(samples)
+}
+
+# 生成大小为1000的Beta(3,2)样本
+set.seed(123)  # 设置随机种子保证结果可重复
+beta_sample <- rbeta_ar(1000, 3, 2)
+```
+
+#### 3.7.2 Beta分布样本与理论密度对比
+```{r , echo=FALSE}
+# 绘制直方图并叠加理论密度曲线
+hist(beta_sample, prob = TRUE, breaks = 30, col = "lightblue",
+     main = "Beta(3,2)分布样本直方图与理论密度曲线",
+     xlab = "x", ylab = "密度")
+
+# 添加理论密度曲线
+curve(dbeta(x, 3, 2), add = TRUE, col = "red", lwd = 2)
+
+# 添加图例
+legend("topright", legend = c("样本直方图", "理论密度"), 
+       col = c("lightblue", "red"), lwd = c(2, 2), bty = "n")
+```
+
+### 3.11 混合正态分布抽样与分布形态分析
+#### 3.11.1 混合正态分布样本生成函数实现
+```{r , echo=FALSE}
+# 设置随机种子以保证结果可重现
+set.seed(123)
+
+# 定义生成混合正态分布样本的函数
+generate_mixture_sample <- function(n, p1, mu1 = 0, mu2 = 3, sigma1 = 1, sigma2 = 1) {
+  # 生成混合指标
+  component <- sample(1:2, size = n, replace = TRUE, prob = c(p1, 1-p1))
+  
+  # 根据混合指标生成样本
+  sample_data <- numeric(n)
+  sample_data[component == 1] <- rnorm(sum(component == 1), mu1, sigma1)
+  sample_data[component == 2] <- rnorm(sum(component == 2), mu2, sigma2)
+  
+  return(sample_data)
+}
+```
+
+#### 3.11.2 混合比例对分布形态影响的比较
+研究不同混合比例p1下，混合正态分布的形态变化规律。
+```{r , echo=FALSE}
+# 定义绘制直方图和密度曲线的函数
+plot_mixture <- function(p1, n = 1000) {
+  # 生成样本
+  sample_data <- generate_mixture_sample(n, p1)
+  
+  # 计算真实密度函数
+  x <- seq(min(sample_data), max(sample_data), length.out = 1000)
+  density_true <- p1 * dnorm(x, 0, 1) + (1-p1) * dnorm(x, 3, 1)
+  
+  # 绘制图形
+  hist(sample_data, prob = TRUE, breaks = 30, col = "lightblue",
+       main = paste("混合正态分布 (p1 =", p1, ")"),
+       xlab = "值", ylab = "密度")
+  lines(x, density_true, col = "red", lwd = 2)
+  legend("topright", legend = c("经验分布", "真实密度"), 
+         col = c("lightblue", "red"), lwd = 2, fill = c("lightblue", NA))
+}
+
+# 测试不同的p1值
+p1_values <- c(0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9)
+
+# 创建多图布局
+par(mfrow = c(2, 4))
+
+# 绘制每个p1值的图形
+for (p1 in p1_values) {
+  plot_mixture(p1)
+}
+
+```
+
+```{r , echo=FALSE}
+cat("理论猜想：当 p1 在 0.25 到 0.75 范围内时，混合分布倾向于呈现双峰形态。\n")
+cat("当 p1 接近 0 或 1 时，分布将呈现单峰形态。\n")
+```
+
+### 3.12 指数-伽马混合分布抽样实验
+
+#### 1 生成指数分布与伽马分布的混合抽样样本
+```{r , echo=FALSE}
+
+# 设置参数
+set.seed(123)  # 设置随机种子以确保结果可重现
+r <- 4
+beta <- 2
+n <- 1000
+
+# 生成Lambda值（来自Gamma分布）
+lambda <- rgamma(n, shape = r, rate = beta)
+
+# 生成Y值（来自指数分布，参数为Lambda）
+y <- rexp(n, rate = lambda)
+
+# 查看结果摘要
+summary(y)
+hist(y, breaks = 30, main = "指数-伽马混合分布", xlab = "Y值")
+```

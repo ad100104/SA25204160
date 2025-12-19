@@ -1,0 +1,140 @@
+---
+title: "SA25204160: 函数使用指南"
+author: "Andong Jiao"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{函数使用指南}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## 1. 包介绍
+`SA25204160`是专为金融量化分析设计的基础工具包，核心功能包括：
+- `train_residual_mlp()`：基于`torch`的残差MLP模型训练，适用于金融数据预测（如收益率、股价预测）；
+- `cpp_quantile_calc()`：基于Rcpp的高效分位数计算，支持0.01、0.5、0.99分位数，适用于大规模金融数据预处理。
+
+包的设计聚焦核心逻辑，无冗余加速代码，确保轻量化与易用性。
+
+## 2. 安装与加载
+### 从GitHub安装（最终发布后生效）
+```{r}
+# 需先安装依赖包（已在DESCRIPTION声明，会自动下载）
+install.packages(c("devtools", "torch", "dplyr"))
+devtools::install_github("你的GitHub用户名/SA25204160", build_vignettes = TRUE)
+library(SA25204160)
+```
+
+```{r}
+library(torch)  # 模型训练依赖
+library(dplyr)  # 数据处理依赖
+```
+
+## 3. 核心函数使用示例
+
+### 3.1 cpp_quantile_calc（Rcpp 分位数计算）
+功能说明
+
+快速计算指定数值列的 0.01（极端低值）、0.5（中位数）、0.99（极端高值）分位数，适用于金融数据异常值检测、风险评估场景。
+```{r}
+# 模拟金融数据（收益率、波动率、成交量）
+set.seed(123)  # 固定随机种子，确保可复现
+financial_data <- data.frame(
+  股票收益率 = rnorm(1000, mean = 0.04, sd = 0.18),
+  市场波动率 = rnorm(1000, mean = 0.12, sd = 0.05),
+  日均成交量 = rnorm(1000, mean = 5000, sd = 1500)
+)
+
+# 计算指定列的分位数
+quantile_result <- cpp_quantile_calc(
+  df = financial_data,
+  feature_cols = c("股票收益率", "市场波动率")
+)
+
+# 查看结果（命名清晰，便于解读）
+str(quantile_result)
+quantile_result$股票收益率  # 单独查看某列分位数
+```
+
+性能对比
+
+因cpp_quantile_calc实现的是已有分位数计算方法，需对比计算速度：
+
+```{R}
+# 生成大规模金融数据（10万行，4列）
+big_fin_data <- data.frame(
+  收益率1 = rnorm(100000, 0.05, 0.2),
+  收益率2 = rnorm(100000, 0.03, 0.15),
+  波动率1 = rnorm(100000, 0.1, 0.04),
+  波动率2 = rnorm(100000, 0.11, 0.06)
+)
+
+# 对比Rcpp函数与原生函数的运行时间
+cat("Rcpp函数运行时间：\n")
+system.time(rcpp_res <- cpp_quantile_calc(big_fin_data, colnames(big_fin_data)))
+
+cat("\nR原生quantile函数运行时间：\n")
+system.time(base_res <- lapply(big_fin_data, function(x) quantile(x, c(0.01, 0.5, 0.99))))
+
+# 验证结果一致性（确保Rcpp函数计算准确）
+all.equal(
+  unlist(rcpp_res),
+  unlist(base_res),
+  tolerance = 1e-3  # 允许微小误差（浮点计算差异）
+)
+```
+结果解读
+
+速度优势：cpp_quantile_calc在大规模数据下运行更快（C++ 底层优化），适合金融大数据预处理；
+
+结果一致性：与原生函数结果基本一致，确保计算准确性；
+
+应用场景：可用于筛选极端收益率（如 q01 以下的亏损股票）、设定波动率阈值等。
+
+### 3.2 train_residual_mlp（残差 MLP 模型训练）
+功能说明
+
+基于残差连接的 MLP（多层感知机）模型，缓解深层网络梯度消失问题，适用于金融数据的复杂模式学习（如基于历史特征预测未来收益率）。
+```{R}
+# 模拟预处理后的训练数据（5个特征列，1个目标列）
+preprocessed_data <- data.frame(
+  历史收益率1 = rnorm(500, 0.05, 0.2),
+  历史收益率2 = rnorm(500, 0.03, 0.15),
+  波动率 = rnorm(500, 0.1, 0.05),
+  成交量占比 = rnorm(500, 0.3, 0.1),
+  PE_ratio = rnorm(500, 15, 3),
+  未来收益率 = rnorm(500, 0.04, 0.18)  # 目标预测列
+)
+
+# 训练残差MLP模型
+residual_model <- train_residual_mlp(
+  preprocessed_data = preprocessed_data,
+  target_col = "未来收益率"
+)
+
+# 查看模型结构
+print(residual_model)
+
+# 预测示例（基于新数据）
+new_data <- data.frame(
+  历史收益率1 = rnorm(10, 0.05, 0.2),
+  历史收益率2 = rnorm(10, 0.03, 0.15),
+  波动率 = rnorm(10, 0.1, 0.05),
+  成交量占比 = rnorm(10, 0.3, 0.1),
+  PE_ratio = rnorm(10, 15, 3)
+)
+
+new_features <- new_data %>%
+  as.matrix() %>%
+  torch_tensor(dtype = torch_float32())
+
+predictions <- residual_model(new_features) %>% as.numeric()
+data.frame(新数据 = 1:10, 预测未来收益率 = predictions)
+```
+结果解读
+
+模型输出：返回torch模型对象，支持后续预测、参数调优；
+
+残差连接优势：相比普通 MLP，残差结构更易训练深层网络，适合捕捉金融数据的非线性关系；
+
+应用场景：可用于短期股票收益率预测、基金净值预测等量化分析任务。

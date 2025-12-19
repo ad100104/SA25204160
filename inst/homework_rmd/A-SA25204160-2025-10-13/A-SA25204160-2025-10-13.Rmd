@@ -1,0 +1,533 @@
+---
+title: "A-SA25204160-2025-10-13"
+author: "SA25204160"
+date: "2025-10-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question
+
+### 7.3
+针对示例 7.9 中的 t 检验，绘制样本量分别为 10、20、30、40 和 50 时的功效曲线，但省略标准误差线。将这些曲线绘制在同一张图上，每条曲线使用不同的颜色或不同的线型，并包含图例。评论功效与样本量之间的关系。
+
+### 7.6
+假设使用一个95%对称的t区间来估计均值，但样本数据是非正态的。那么置信区间覆盖均值的概率不一定等于0.95。使用蒙特卡洛实验来估计t区间对于来自χ²(2)分布、样本量n=20的随机样本的覆盖概率。将你的t区间结果与示例7.4中的模拟结果进行比较。（t区间应该比方差区间对于偏离正态性更加稳健。）
+
+### 7.A
+使用蒙特卡洛模拟来研究当抽样总体为非正态时，t 检验的经验第一类错误率是否近似等于名义显著性水平 α。t 检验对于轻度偏离正态性是稳健的。讨论抽样总体为 (i) χ²(1)，(ii) Uniform(0,2)，和 (iii) Exponential(rate=1) 情况下的模拟结果。在每种情况下，检验 H₀: μ = μ₀ 对 H₁: μ ≠ μ₀，其中 μ₀ 分别是 χ²(1)、Uniform(0,2) 和 Exponential(1) 的均值。
+
+### 6.15
+获取例 6.14 中的分层重要性抽样估计，并将其与例 6.11 的结果进行比较。
+
+## Answer
+
+### 7.3
+
+#### 7.3.1 
+设置参数：mu0=500, sigma=100, 备选均值序列mu从450到650，间隔10。
+```{r echo=FALSE}
+# 设置参数
+mu0 <- 500      # 零假设均值
+sigma <- 100    # 总体标准差
+m <- 1000       # 蒙特卡洛重复次数
+
+# 备选均值序列
+mu <- seq(450, 650, 10)
+M <- length(mu)
+```
+
+#### 7.3.2 
+定义样本大小向量：sample_sizes <- c(10,20,30,40,50)
+```{r echo=FALSE}
+# 样本量向量
+sample_sizes <- c(10, 20, 30, 40, 50)
+n_sizes <- length(sample_sizes)
+
+# 创建空矩阵存储功效结果
+power_matrix <- matrix(0, nrow = M, ncol = n_sizes)
+
+```
+
+#### 7.3.3
+对于每个样本大小n，我们进行与示例7.9类似的模拟：
+
+对于每个备选均值mu[i],重复m次实验（例如m=1000）.从均值为mu[i]，标准差为sigma的正态分布中生成n个样本并执行t检验。计算拒绝H0的次数比例（即p值小于0.05）作为功效的估计
+```{r echo=FALSE}
+# 对每个样本量进行模拟
+for (j in 1:n_sizes) {
+  n <- sample_sizes[j]
+  
+  for (i in 1:M) {
+    mu1 <- mu[i]
+    # 模拟t检验并计算p值
+    pvalues <- replicate(m, expr = {
+      x <- rnorm(n, mean = mu1, sd = sigma)
+      ttest <- t.test(x, alternative = "two.sided", mu = mu0)
+      ttest$p.value
+    })
+    # 计算功效（拒绝零假设的比例）
+    power_matrix[i, j] <- mean(pvalues <= 0.05)
+  }
+}
+
+
+library(ggplot2)
+
+# 创建数据框用于绘图
+df <- data.frame()
+for (j in 1:n_sizes) {
+  df <- rbind(df, data.frame(
+    mean = mu,
+    power = power_matrix[, j],
+    sample_size = as.factor(paste("n =", sample_sizes[j]))
+  ))
+}
+```
+
+#### 7.3.4
+将每个样本大小n的功效曲线绘制在同一张图上，使用不同颜色或线型，并添加图例。
+```{r echo=FALSE}
+# 绘制功效曲线
+ggplot(df, aes(x = mean, y = power, color = sample_size, linetype = sample_size)) +
+  geom_line(linewidth = 1) +
+  geom_vline(xintercept = mu0, linetype = "dashed", color = "gray50") +
+  geom_hline(yintercept = 0.05, linetype = "dotted", color = "gray50") +
+  labs(
+    title = "t检验的功效曲线（不同样本量）",
+    x = "备选均值",
+    y = "功效",
+    color = "样本量",
+    linetype = "样本量"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+#### 7.3.5
+评论功效与样本量的关系：
+
+从图形可以看出，随着样本量的增加：
+
+1. 当备选均值接近零假设均值(500)时，功效增加
+
+2. 曲线变得更加陡峭，说明检验对均值差异更加敏感
+
+3. 整体功效水平提高，更容易检测到真实的均值差异
+
+### 7.6
+
+#### 7.6.1
+设置参数：样本量n=20，置信水平95%，蒙特卡洛重复次数m=1000。
+```{r echo=FALSE}
+# 设置参数
+n <- 20           # 样本量
+alpha <- 0.05     # 显著性水平
+m <- 10000        # 蒙特卡洛重复次数
+df_chisq <- 2     # 卡方分布自由度
+```
+
+#### 7.6.2
+从卡方分布（自由度为2）中生成随机样本。注意，卡方(2)的均值为2，方差为4。
+```{r echo=FALSE}
+```
+
+#### 7.6.3
+对于每个样本，计算t区间（使用t.test）和方差置信区间（使用卡方分布）。
+```{r echo=FALSE}
+# 计算χ²(2)分布的真实均值
+true_mean <- df_chisq
+
+```
+
+#### 7.6.4
+检查总体均值（2）是否在t区间内，以及总体方差（4）是否在方差置信区间内。
+```{r echo=FALSE}
+# 模拟t区间的覆盖概率
+cover_t <- numeric(m)
+
+for (i in 1:m) {
+  # 从χ²(2)分布生成随机样本
+  x <- rchisq(n, df = df_chisq)
+  
+  # 计算95% t置信区间
+  t_interval <- t.test(x, conf.level = 1 - alpha)$conf.int
+  
+  # 检查真实均值是否在区间内
+  cover_t[i] <- (t_interval[1] <= true_mean) & (true_mean <= t_interval[2])
+}
+```
+
+#### 7.6.5
+重复m次，计算覆盖概率。
+```{r echo=FALSE}
+# 计算t区间的覆盖概率
+coverage_prob_t <- mean(cover_t)
+se_t <- sqrt(coverage_prob_t * (1 - coverage_prob_t) / m)
+
+# 输出结果
+cat("t区间覆盖概率分析 (χ²(2)数据):\n")
+cat("样本量 n =", n, "\n")
+cat("蒙特卡洛重复次数 m =", m, "\n")
+cat("真实均值 μ =", true_mean, "\n")
+cat("t区间覆盖概率 =", round(coverage_prob_t, 4), "\n")
+cat("标准误差 =", round(se_t, 4), "\n")
+cat("95% 置信区间: [", 
+    round(coverage_prob_t - 1.96 * se_t, 4), ",", 
+    round(coverage_prob_t + 1.96 * se_t, 4), "]\n")
+
+# 与正态理论值比较
+cat("\n与名义置信水平", 1 - alpha, "的比较:\n")
+cat("差异 =", round(coverage_prob_t - (1 - alpha), 4), "\n")
+
+# 可视化结果
+if (!require(ggplot2)) install.packages("ggplot2")
+library(ggplot2)
+
+# 创建数据框用于绘图
+results_df <- data.frame(
+  Method = c("t区间"),
+  Coverage = c(coverage_prob_t),
+  SE = c(se_t)
+)
+
+# 绘制覆盖概率图
+ggplot(results_df, aes(x = Method, y = Coverage)) +
+  geom_col(fill = "steelblue", alpha = 0.7) +
+  geom_errorbar(aes(ymin = Coverage - 2 * SE, ymax = Coverage + 2 * SE), 
+                width = 0.2, color = "darkred", linewidth = 1) +
+  geom_hline(yintercept = 1 - alpha, linetype = "dashed", color = "red", linewidth = 1) +
+  labs(
+    title = "t区间在χ²(2)数据下的覆盖概率",
+    subtitle = paste("样本量 n =", n, ", 蒙特卡洛重复次数 =", m),
+    x = "方法",
+    y = "覆盖概率"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(limits = c(0.9, 1)) +
+  annotate("text", x = 1, y = 0.92, 
+           label = paste("估计覆盖概率 =", round(coverage_prob_t, 4)), 
+           color = "blue", size = 4)
+```
+
+#### 7.6.6
+结果与示例7.4中的模拟结果进行比较
+```{r echo=FALSE}
+# 额外分析：与方差置信区间的比较（参考例7.4）
+cat("\n--- 与方差置信区间的比较 ---\n")
+
+# 模拟方差置信区间的覆盖概率（使用卡方分布）
+cover_var <- numeric(m)
+true_var <- 2 * df_chisq  # χ²(k)的方差是2k
+
+for (i in 1:m) {
+  x <- rchisq(n, df = df_chisq)
+  
+  # 计算95%方差置信区间（使用卡方分布）
+  s2 <- var(x)
+  df_var <- n - 1
+  chi_lower <- qchisq(alpha/2, df = df_var)
+  chi_upper <- qchisq(1 - alpha/2, df = df_var)
+  var_interval <- c((df_var * s2) / chi_upper, (df_var * s2) / chi_lower)
+  
+  # 检查真实方差是否在区间内
+  cover_var[i] <- (var_interval[1] <= true_var) & (true_var <= var_interval[2])
+}
+
+coverage_prob_var <- mean(cover_var)
+se_var <- sqrt(coverage_prob_var * (1 - coverage_prob_var) / m)
+
+cat("方差区间覆盖概率 =", round(coverage_prob_var, 4), "\n")
+cat("方差区间标准误差 =", round(se_var, 4), "\n")
+
+# 比较结果
+cat("\n--- 稳健性比较 ---\n")
+cat("t区间覆盖概率与名义水平的差异:", round(abs(coverage_prob_t - (1 - alpha)), 4), "\n")
+cat("方差区间覆盖概率与名义水平的差异:", round(abs(coverage_prob_var - (1 - alpha)), 4), "\n")
+
+if (abs(coverage_prob_t - (1 - alpha)) < abs(coverage_prob_var - (1 - alpha))) {
+  cat("结论: t区间比方差区间更稳健于正态性假设的偏离\n")
+} else {
+  cat("结论: 在此设置下，t区间并不比方差区间更稳健\n")
+}
+```
+
+### 7.A
+
+#### 7.A.1
+设置参数
+```{r echo=FALSE}
+# 设置参数
+alpha <- 0.05          # 名义显著性水平
+m <- 10000             # 蒙特卡洛重复次数
+sample_sizes <- c(20, 50, 100)  # 不同的样本量
+```
+
+#### 7.A.2
+对三种分布分别模拟
+```{r echo=FALSE}
+# 定义三种分布的真实均值
+mu_chisq <- 1          # χ²(1)的均值 = 自由度
+mu_unif <- 1           # Uniform(0,2)的均值 = (0+2)/2 = 1
+mu_exp <- 1            # Exponential(1)的均值 = 1/rate = 1
+
+# 创建存储结果的矩阵
+results <- matrix(0, nrow = length(sample_sizes), ncol = 3)
+colnames(results) <- c("Chi-squared(1)", "Uniform(0,2)", "Exponential(1)")
+rownames(results) <- paste("n =", sample_sizes)
+```
+
+#### 7.A.3
+计算每种分布的经验第一类错误率
+```{r echo=FALSE}
+# 对每个样本量进行模拟
+for (n_idx in 1:length(sample_sizes)) {
+  n <- sample_sizes[n_idx]
+  
+  # (i) χ²(1)分布
+  reject_chisq <- numeric(m)
+  for (i in 1:m) {
+    x <- rchisq(n, df = 1)
+    t_test <- t.test(x, mu = mu_chisq)
+    reject_chisq[i] <- (t_test$p.value <= alpha)
+  }
+  empirical_alpha_chisq <- mean(reject_chisq)
+  
+  # (ii) Uniform(0,2)分布
+  reject_unif <- numeric(m)
+  for (i in 1:m) {
+    x <- runif(n, min = 0, max = 2)
+    t_test <- t.test(x, mu = mu_unif)
+    reject_unif[i] <- (t_test$p.value <= alpha)
+  }
+  empirical_alpha_unif <- mean(reject_unif)
+  
+  # (iii) Exponential(1)分布
+  reject_exp <- numeric(m)
+  for (i in 1:m) {
+    x <- rexp(n, rate = 1)
+    t_test <- t.test(x, mu = mu_exp)
+    reject_exp[i] <- (t_test$p.value <= alpha)
+  }
+  empirical_alpha_exp <- mean(reject_exp)
+  
+  # 存储结果
+  results[n_idx, ] <- c(empirical_alpha_chisq, empirical_alpha_unif, empirical_alpha_exp)
+}
+
+```
+
+#### 7.A.4
+输出结果并讨论
+```{r echo=FALSE}
+# 输出结果
+cat("经验第一类错误率分析 (名义显著性水平 α =", alpha, ")\n")
+cat("蒙特卡洛重复次数 m =", m, "\n\n")
+
+print(round(results, 4))
+
+# 计算标准误差
+se_results <- sqrt(results * (1 - results) / m)
+cat("\n标准误差:\n")
+print(round(se_results, 4))
+
+# 可视化结果
+if (!require(ggplot2)) install.packages("ggplot2")
+if (!require(reshape2)) install.packages("reshape2")
+library(ggplot2)
+library(reshape2)
+
+# 准备绘图数据
+plot_data <- melt(results)
+colnames(plot_data) <- c("SampleSize", "Distribution", "EmpiricalAlpha")
+plot_data$SampleSize <- factor(plot_data$SampleSize, 
+                              levels = rownames(results))
+
+# 绘制经验第一类错误率
+ggplot(plot_data, aes(x = SampleSize, y = EmpiricalAlpha, fill = Distribution)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+  geom_hline(yintercept = alpha, linetype = "dashed", color = "red", linewidth = 1) +
+  labs(
+    title = "t检验在不同非正态分布下的经验第一类错误率",
+    subtitle = paste("名义显著性水平 α =", alpha, "，蒙特卡洛重复次数 =", m),
+    x = "样本量",
+    y = "经验第一类错误率",
+    fill = "分布"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(limits = c(0, 0.1)) +
+  annotate("text", x = 1, y = alpha + 0.01, 
+           label = paste("名义水平", alpha), color = "red")
+
+# 详细分析每种分布
+cat("\n--- 详细分析 ---\n")
+
+for (n_idx in 1:length(sample_sizes)) {
+  n <- sample_sizes[n_idx]
+  cat("\n样本量 n =", n, ":\n")
+  
+  for (dist_idx in 1:3) {
+    dist_name <- colnames(results)[dist_idx]
+    emp_alpha <- results[n_idx, dist_idx]
+    se <- se_results[n_idx, dist_idx]
+    
+    # 计算与名义水平的差异及其统计显著性
+    diff <- emp_alpha - alpha
+    z_score <- diff / se
+    p_value <- 2 * (1 - pnorm(abs(z_score)))
+    
+    cat("  ", dist_name, ":\n")
+    cat("    经验第一类错误率 =", round(emp_alpha, 4), "\n")
+    cat("    与名义水平差异 =", round(diff, 4))
+    
+    if (abs(diff) > 2 * se) {
+      cat(" **")  # 统计显著
+    }
+    cat("\n")
+    
+    # 判断稳健性
+    if (abs(diff) < 0.01) {
+      robustness <- "非常稳健"
+    } else if (abs(diff) < 0.02) {
+      robustness <- "较为稳健"
+    } else if (abs(diff) < 0.03) {
+      robustness <- "轻度偏离"
+    } else {
+      robustness <- "严重偏离"
+    }
+    cat("    稳健性评价:", robustness, "\n")
+  }
+}
+```
+
+### 6.15
+
+### 6.15.1
+初始设置和函数定义
+```{r echo=FALSE}
+# 设置随机种子以保证结果可重现
+set.seed(123)
+
+# 总样本量
+n <- 10000
+# 子区间数量
+m <- 5
+# 每个子区间的样本量
+n_per_stratum <- n / m
+
+# 定义被积函数
+g <- function(x) {
+  ifelse(x > 0 & x < 1, exp(-x) / (1 + x^2), 0)
+}
+```
+
+### 6.15.2
+标准重要性抽样（例6.11的方法）
+```{r echo=FALSE}
+standard_importance_sampling <- function() {
+  # 生成均匀分布随机数
+  u <- runif(n)
+  
+  # 通过逆变换方法从截断的指数分布生成样本
+  # 使用建议分布 f3(x) = e^{-x}/(1-e^{-1})
+  x <- -log(1 - u * (1 - exp(-1)))
+  
+  # 计算重要性权重
+  # 真实密度: g(x)
+  # 建议密度: exp(-x) / (1 - exp(-1))
+  importance_weights <- g(x) / (exp(-x) / (1 - exp(-1)))
+  
+  # 计算估计值和标准误差
+  theta_hat <- mean(importance_weights)
+  std_error <- sqrt(var(importance_weights) / n)
+  
+  return(list(
+    estimate = theta_hat,
+    std_error = std_error
+  ))
+}
+```
+
+### 6.15.3
+分层重要性抽样（例6.14的方法）
+```{r echo=FALSE}
+stratified_importance_sampling <- function() {
+  theta_stratified <- 0
+  variance_stratified <- 0
+  
+  # 对每个子区间进行抽样
+  for (j in 0:(m-1)) {
+    # 定义子区间边界
+    a <- j / m
+    b <- (j + 1) / m
+    
+    # 生成均匀分布随机数
+    u <- runif(n_per_stratum)
+    
+    # 通过逆变换方法生成样本
+    # 使用截断的指数分布：5e^{-x}/(1-e^{-1})
+    x <- -log(exp(-a) - u * (exp(-a) - exp(-b)))
+    
+    # 步骤3.4: 计算重要性权重
+    # 真实密度: g(x)
+    # 建议密度: m * exp(-x) / (exp(-a) - exp(-b))
+    importance_weights <- g(x) / (m * exp(-x) / (exp(-a) - exp(-b)))
+    
+    # 步骤3.5: 计算该层的估计和方差
+    theta_j <- mean(importance_weights)
+    variance_j <- var(importance_weights) / n_per_stratum
+    
+    # 步骤3.6: 累加各层结果
+    theta_stratified <- theta_stratified + theta_j
+    variance_stratified <- variance_stratified + variance_j
+  }
+  
+  std_error <- sqrt(variance_stratified)
+  
+  return(list(
+    estimate = theta_stratified,
+    std_error = std_error
+  ))
+}
+
+```
+
+### 6.15.4
+结果显示和比较
+```{r echo=FALSE}
+# 运行标准重要性抽样（例6.11）
+result_standard <- standard_importance_sampling()
+
+# 运行分层重要性抽样（例6.14）
+result_stratified <- stratified_importance_sampling()
+cat("=== 例6.11结果（标准重要性抽样）===\n")
+cat("估计值:", result_standard$estimate, "\n")
+cat("标准误差:", result_standard$std_error, "\n\n")
+
+cat("=== 例6.14结果（分层重要性抽样）===\n")
+cat("估计值:", result_stratified$estimate, "\n")
+cat("标准误差:", result_stratified$std_error, "\n\n")
+
+
+cat("=== 比较分析 ===\n")
+# 计算标准误差改进百分比
+improvement <- (result_standard$std_error - result_stratified$std_error) / 
+               result_standard$std_error * 100
+cat("标准误差改进:", round(improvement, 2), "%\n")
+
+# 计算理论真值作为参考
+theoretical_value <- integrate(function(x) exp(-x)/(1+x^2), 0, 1)$value
+cat("理论真值:", theoretical_value, "\n")
+
+# 计算相对误差
+rel_error_standard <- abs(result_standard$estimate - theoretical_value) / 
+                     theoretical_value * 100
+rel_error_stratified <- abs(result_stratified$estimate - theoretical_value) / 
+                       theoretical_value * 100
+
+cat("标准方法的相对误差:", round(rel_error_standard, 4), "%\n")
+cat("分层方法的相对误差:", round(rel_error_stratified, 4), "%\n")
+

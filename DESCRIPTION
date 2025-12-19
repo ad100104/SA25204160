@@ -1,0 +1,21 @@
+Package: SA25204160
+Title: Financial MLP Residual Model (Quantitative Analysis, Core Logic Only)
+Version: 0.1.0
+Authors@R: c(person(given = "Andong", family = "Jiao", email = "2097050015@qq.com", role = c("aut", "cre")))
+Maintainer: Andong Jiao <2097050015@qq.com>
+Description: A basic R package for financial data prediction, including Rcpp-based quantile calculation (core logic only) and MLP residual model training with torch (no acceleration).
+License: MIT
+Encoding: UTF-8
+LazyData: true
+Imports:
+  Rcpp (>= 1.0.0),
+  torch (>= 0.12.0),
+  dplyr (>= 1.1.0),
+  stats (>= 4.3.0)
+LinkingTo:
+  Rcpp
+Suggests:
+  rmarkdown,
+  knitr
+VignetteBuilder: knitr
+RoxygenNote: 7.3.3

@@ -1,0 +1,322 @@
+---
+title: "A-SA25204160-11-03"
+author: "SA25204160"
+date: "2025-11-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question
+
+### 10.3
+
+### 10.7
+
+### Proof
+
+证明在连续情况下，具有建议分布g(r|s)的M-H采样器的平稳分布是目标分布f(x).
+
+## Answer
+
+### 10.3
+
+#### 10.3.1
+
+首先实现两样本Cramér-von Mises检验统计量，使用公式(10.14)
+
+```{r echo=FALSE}
+# 定义Cramér-von Mises检验统计量函数
+cvm_statistic <- function(x, y) {
+  n <- length(x)
+  m <- length(y)
+  N <- n + m
+  
+  # 合并样本并排序
+  z <- c(x, y)
+  ranks <- rank(z)
+  
+  # 计算经验分布函数
+  F_n <- ecdf(x)
+  G_m <- ecdf(y)
+  
+  # 计算统计量
+  sum_val <- 0
+  for (i in 1:n) {
+    for (j in 1:m) {
+      term <- (i/n - j/m)^2
+      sum_val <- sum_val + term
+    }
+  }
+  
+  # 使用公式(10.14)
+  W_squared <- (4 * m * n - 1) / (6 * (m + n)) - (1 / (n * m * (n + m))) * sum_val
+  
+  return(W_squared)
+}
+```
+
+#### 10.3.2
+
+实现置换检验版本
+
+```{r echo=FALSE}
+# 置换检验函数
+cvm_permutation_test <- function(x, y, R = 999) {
+  n <- length(x)
+  m <- length(y)
+  z <- c(x, y)
+  
+  # 计算观测统计量
+  obs_stat <- cvm_statistic(x, y)
+  
+  # 存储置换统计量
+  perm_stats <- numeric(R)
+  
+  for (i in 1:R) {
+    # 随机置换样本
+    perm_indices <- sample(length(z), size = n, replace = FALSE)
+    x_perm <- z[perm_indices]
+    y_perm <- z[-perm_indices]
+    
+    # 计算置换统计量
+    perm_stats[i] <- cvm_statistic(x_perm, y_perm)
+  }
+  
+  # 计算p值
+  p_value <- mean(c(obs_stat, perm_stats) >= obs_stat)
+  
+  return(list(statistic = obs_stat, p_value = p_value, perm_stats = perm_stats))
+}
+```
+
+#### 10.3.3
+
+应用到例10.1和10.2的数据
+
+```{r echo=FALSE}
+# 从例10.1和10.2加载数据
+x_soybean <- c(158, 171, 193, 199, 230, 243, 248, 248, 250, 257, 271, 315, 327, 329)
+y_linseed <- c(141, 148, 169, 181, 203, 213, 229, 244, 257, 260, 271, 309)
+
+# 执行Cramér-von Mises置换检验
+set.seed(123)
+result_cvm <- cvm_permutation_test(x_soybean, y_linseed, R = 9999)
+
+# 输出结果
+cat("Cramér-von Mises置换检验结果:\n")
+cat("检验统计量 =", round(result_cvm$statistic, 4), "\n")
+cat("p值 =", round(result_cvm$p_value, 4), "\n")
+
+# 可视化置换分布
+library(ggplot2)
+perm_df <- data.frame(statistic = result_cvm$perm_stats)
+ggplot(perm_df, aes(x = statistic)) +
+  geom_histogram(bins = 30, fill = "lightblue", color = "black", alpha = 0.7) +
+  geom_vline(xintercept = result_cvm$statistic, color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = "Cramér-von Mises统计量的置换分布",
+       x = "检验统计量", y = "频数") +
+  theme_minimal()
+```
+
+### 10.7
+
+#### 10.7.1
+
+首先实现Count Five检验的原始版本
+
+```{r echo=FALSE}
+# Count Five检验函数（原始版本）
+count5_test <- function(x, y) {
+  # 计算极端点
+  countx <- sum(x > max(y)) + sum(x < min(y))
+  county <- sum(y > max(x)) + sum(y < min(x))
+  
+  # 返回最大极端点数
+  return(max(countx, county))
+}
+```
+
+#### 10.7.2
+
+实现基于极端点最大数的置换方差检验
+
+```{r echo=FALSE}
+# 基于极端点最大数的置换方差检验
+count5_permutation_test <- function(x, y, R = 999) {
+  n1 <- length(x)
+  n2 <- length(y)
+  z <- c(x, y)
+  
+  # 计算观测统计量
+  obs_stat <- count5_test(x, y)
+  
+  # 存储置换统计量
+  perm_stats <- numeric(R)
+  
+  for (i in 1:R) {
+    # 随机置换样本
+    perm_sample <- sample(z)
+    x_perm <- perm_sample[1:n1]
+    y_perm <- perm_sample[(n1 + 1):(n1 + n2)]
+    
+    # 计算置换统计量
+    perm_stats[i] <- count5_test(x_perm, y_perm)
+  }
+  
+  # 计算p值
+  p_value <- mean(c(obs_stat, perm_stats) >= obs_stat)
+  
+  return(list(statistic = obs_stat, p_value = p_value, perm_stats = perm_stats))
+}
+```
+
+#### 10.7.3
+
+重复例7.15的模拟，但使用置换检验
+
+```{r echo=FALSE}
+# 模拟函数：评估置换检验的Type I错误率
+simulate_type1_error <- function(n1, n2, R_perm = 999, m_sim = 1000) {
+  alpha_hat <- numeric(m_sim)
+  
+  for (i in 1:m_sim) {
+    # 生成来自相同分布的数据
+    x <- rnorm(n1, 0, 1)
+    y <- rnorm(n2, 0, 1)
+    
+    # 中心化
+    x <- x - mean(x)
+    y <- y - mean(y)
+    
+    # 执行置换检验
+    test_result <- count5_permutation_test(x, y, R = R_perm)
+    
+    # 记录是否拒绝
+    alpha_hat[i] <- (test_result$p_value <= 0.05)
+  }
+  
+  return(mean(alpha_hat))
+}
+
+# 运行模拟
+set.seed(123)
+cat("置换检验的Type I错误率模拟:\n")
+
+# 情况1: n1 = 20, n2 = 30
+type1_20_30 <- simulate_type1_error(20, 30, R_perm = 199, m_sim = 500)
+cat("n1 = 20, n2 = 30: Type I error rate =", round(type1_20_30, 4), "\n")
+
+# 情况2: n1 = 20, n2 = 50
+type1_20_50 <- simulate_type1_error(20, 50, R_perm = 199, m_sim = 500)
+cat("n1 = 20, n2 = 50: Type I error rate =", round(type1_20_50, 4), "\n")
+
+# 与原始Count Five检验比较
+cat("\n与原始Count Five检验比较:\n")
+cat("原始方法 (n1=20, n2=30): 0.1064\n")
+cat("置换方法 (n1=20, n2=30):", round(type1_20_30, 4), "\n")
+cat("原始方法 (n1=20, n2=50): 0.2934\n")
+cat("置换方法 (n1=20, n2=50):", round(type1_20_50, 4), "\n")
+```
+
+#### 10.7.4
+
+可视化结果比较
+
+```{r echo=FALSE}
+# 创建比较数据框
+comparison_df <- data.frame(
+  Method = rep(c("Original", "Permutation"), each = 2),
+  SampleSize = rep(c("n1=20,n2=30", "n1=20,n2=50"), 2),
+  TypeIError = c(0.1064, 0.2934, type1_20_30, type1_20_50)
+)
+
+# 绘制比较图
+ggplot(comparison_df, aes(x = SampleSize, y = TypeIError, fill = Method)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "red", linewidth = 1) +
+  labs(title = "Count Five检验与置换检验的Type I错误率比较",
+       subtitle = "名义显著性水平 α = 0.05",
+       x = "样本大小", y = "经验Type I错误率",
+       fill = "方法") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Original" = "steelblue", "Permutation" = "orange")) +
+  annotate("text", x = 1.5, y = 0.06, label = "名义水平", color = "red")
+```
+
+### Proof
+
+因为是理论证明，所以没有代码，下面是证明过程。
+
+
+
+
+设$f(x)$为目标分布，$g(r|s)$为建议分布。M-H算法的接受概率为：
+
+\[
+\alpha(s \to r) = \min\left(1, \frac{f(r)g(s|r)}{f(s)g(r|s)}\right)
+\]
+
+
+证明细致平衡条件成立
+
+要证明$f(x)$是平稳分布，需要验证细致平衡条件：
+
+\[
+f(s)P(s \to r) = f(r)P(r \to s)
+\]
+
+其中转移概率$P(s \to r) = g(r|s)\alpha(s \to r)$
+
+
+分情况证明细致平衡条件
+
+当$\frac{f(r)g(s|r)}{f(s)g(r|s)} \geq 1$时
+
+此时$\alpha(s \to r) = 1$，且$\alpha(r \to s) = \frac{f(s)g(r|s)}{f(r)g(s|r)}$
+
+左边：
+\[
+f(s)P(s \to r) = f(s)g(r|s) \cdot 1 = f(s)g(r|s)
+\]
+
+右边：
+\[
+f(r)P(r \to s) = f(r)g(s|r) \cdot \frac{f(s)g(r|s)}{f(r)g(s|r)} = f(s)g(r|s)
+\]
+
+$\therefore$ 左边 = 右边
+
+
+继续证明另一种情况
+
+当$\frac{f(r)g(s|r)}{f(s)g(r|s)} < 1$时
+
+此时$\alpha(s \to r) = \frac{f(r)g(s|r)}{f(s)g(r|s)}$，且$\alpha(r \to s) = 1$
+
+左边：
+\[
+f(s)P(s \to r) = f(s)g(r|s) \cdot \frac{f(r)g(s|r)}{f(s)g(r|s)} = f(r)g(s|r)
+\]
+
+右边：
+\[
+f(r)P(r \to s) = f(r)g(s|r) \cdot 1 = f(r)g(s|r)
+\]
+
+$\therefore$ 左边 = 右边
+
+
+结论
+
+在两种情况下细致平衡条件均成立：
+
+\[
+f(s)P(s \to r) = f(r)P(r \to s) \quad \forall s, r
+\]
+
+因此，目标分布$f(x)$是M-H采样器的平稳分布。证毕。
+
+

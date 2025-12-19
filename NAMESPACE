@@ -1,0 +1,5 @@
+useDynLib(SA25204160, .registration = TRUE)
+importFrom(Rcpp, sourceCpp)
+export(cpp_quantile_calc)
+export(train_residual_mlp)
+export(homework_access)

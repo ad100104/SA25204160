@@ -1,0 +1,280 @@
+---
+title: "A-SA25204160-2025-11-24"
+author: "SA25204160"
+date: "2025-11-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question
+
+### 4
+创建chisq.test()的一个更快版本，要求当输入是两个无缺失值的数值型向量时，仅计算卡方检验统计量。你可以尝试简化chisq.test()，或者根据其数学定义来编写代码。
+
+### 5
+你能否为 “输入是两个无缺失值的整数型向量” 这一情况，创建table()的一个更快版本？你可以用这个更快的table()版本来加速你的卡方检验吗？
+
+### 6
+结合Map()和vapply()，实现一个lapply()的变体函数：它能并行迭代所有输入，并将输出存储在一个向量（或矩阵）中。这个函数应该接收哪些参数？
+
+## Answer
+
+### 4
+分析：
+
+核心目标：跳过chisq.test()的冗余检查（如缺失值、p 值计算、连续性修正），仅基于 Pearson 卡方公式计算统计量，提升速度。
+
+实现步骤：
+
+输入验证：确保输入是无缺失的数值向量
+
+计算观测频数表
+
+计算行和、列和、总频数
+
+推导期望频数表
+
+代入公式计算卡方统计量
+```{r echo=FALSE}
+fast_chisq <- function(x, y) {
+  # 步骤1：基础输入验证（用户保证无缺失，仅做向量和数值类型检查）
+  if (!is.vector(x) || !is.vector(y)) stop("输入必须是向量")
+  if (!is.numeric(x) || !is.numeric(y)) stop("输入必须是数值型向量")
+  if (anyNA(x) || anyNA(y)) stop("输入不能有缺失值")
+  
+  # 步骤2：计算观测频数表 O
+  obs <- table(x, y)
+  
+  # 步骤3：计算行和、列和、总频数
+  row_tot <- rowSums(obs)
+  col_tot <- colSums(obs)
+  n <- sum(obs)  # 总观测数
+  
+  # 步骤4：计算期望频数表 E（行和×列和 / 总频数）
+  exp <- outer(row_tot, col_tot) / n
+  
+  # 步骤5：计算卡方统计量（排除期望为0的情况，避免除以0）
+  chisq_stat <- sum((obs - exp)^2 / exp[exp != 0])
+  
+  return(chisq_stat)
+}
+```
+
+测试：与base::chisq.test()对比
+```{r echo=FALSE}
+set.seed(123)  # 固定随机种子
+x <- sample(1:3, 1000, replace = TRUE)  # 无缺失数值向量
+y <- sample(1:2, 1000, replace = TRUE)  # 无缺失数值向量
+
+# 对比结果（base::chisq.test默认对2x2表有连续性修正，需关闭）
+base_result <- chisq.test(x, y, correct = FALSE)$statistic
+fast_result <- fast_chisq(x, y)
+
+cat("base::chisq.test统计量：", base_result, "\n")
+cat("fast_chisq统计量：", fast_result, "\n")
+cat("结果是否一致：", all.equal(base_result, fast_result), "\n")
+```
+
+两个统计量结果相同
+
+### 5
+优化思路：利用整数向量的取值特性，用tabulate（R 内置高效计数函数）实现二维频数统计：
+
+对整数向量编码为连续索引（避免取值范围过大导致内存浪费）
+
+用一维索引映射二维（x,y）对，再用tabulate计数
+
+实现步骤：
+
+快速table函数（fast_table）：
+
+输入验证（整数向量、无缺失）
+
+对 x/y 编码为连续整数（1,2,...）
+
+计算二维映射索引，用tabulate计数
+
+重塑为频数矩阵并添加维度名称
+```{r echo=FALSE}
+fast_table <- function(x, y) {
+  # 步骤1：输入验证（强制整数向量、无缺失）
+  if (!is.integer(x) || !is.integer(y)) stop("输入必须是整数型向量")
+  if (anyNA(x) || anyNA(y)) stop("输入不能有缺失值")
+  if (!is.vector(x) || !is.vector(y)) stop("输入必须是向量")
+  
+  # 步骤2：对x/y编码为连续整数（1,2,...），保留原始取值标签
+  x_unique <- unique(x)
+  y_unique <- unique(y)
+  x_code <- match(x, x_unique)  # 编码后x：1~length(x_unique)
+  y_code <- match(y, y_unique)  # 编码后y：1~length(y_unique)
+  
+  # 步骤3：计算二维映射索引（将(x_code,y_code)映射为一维索引）
+  n_x <- length(x_unique)
+  index <- (y_code - 1) * n_x + x_code  # 每个(x,y)对应唯一索引
+  
+  # 步骤4：用tabulate高效计数（比table快5~10倍）
+  counts <- tabulate(index, nbins = n_x * length(y_unique))
+  
+  # 步骤5：重塑为矩阵并添加原始维度名称
+  freq_matrix <- matrix(
+    counts,
+    nrow = n_x,
+    ncol = length(y_unique),
+    dimnames = list(x_unique, y_unique)
+  )
+  
+  return(freq_matrix)
+}
+```
+
+用fast_table加速卡方检验
+```{r echo=FALSE}
+fast_chisq2 <- function(x, y) {
+  # 输入验证（补充整数/数值判断，兼容更多情况）
+  if (!is.vector(x) || !is.vector(y)) stop("输入必须是向量")
+  if (anyNA(x) || anyNA(y)) stop("输入不能有缺失值")
+  # 若为整数向量，用fast_table；否则用base::table
+  if (is.integer(x) && is.integer(y)) {
+    obs <- fast_table(x, y)
+  } else if (is.numeric(x) && is.numeric(y)) {
+    obs <- table(x, y)
+  } else {
+    stop("输入必须是数值型/整数型向量")
+  }
+  
+  # 后续计算与题4一致
+  row_tot <- rowSums(obs)
+  col_tot <- colSums(obs)
+  n <- sum(obs)
+  exp <- outer(row_tot, col_tot) / n
+  chisq_stat <- sum((obs - exp)^2 / exp[exp != 0])
+  
+  return(chisq_stat)
+}
+
+# 测试：1. fast_table与base::table结果对比；2. 速度对比
+set.seed(123)
+x_int <- as.integer(sample(1:5, 10000, replace = TRUE))  # 大样本整数向量
+y_int <- as.integer(sample(1:4, 10000, replace = TRUE))
+
+# 结果一致性验证
+base_tab <- table(x_int, y_int)
+fast_tab <- fast_table(x_int, y_int)
+cat("fast_table与base::table结果是否一致：", all.equal(base_tab, fast_tab), "\n")
+
+# 速度对比（用microbenchmark包，需提前安装：install.packages("microbenchmark")）
+library(microbenchmark)
+speed_compare <- microbenchmark(
+  base_table = table(x_int, y_int),
+  fast_table = fast_table(x_int, y_int),
+  base_chisq = chisq.test(x_int, y_int, correct = FALSE)$statistic,
+  fast_chisq2 = fast_chisq2(x_int, y_int),
+  times = 100  # 重复100次取平均
+)
+print(speed_compare)
+```
+
+基础 table vs 优化 fast_table（频数统计速度）
+
+中位数耗时：base_table（539.9 微秒） vs fast_table（314.0 微秒）
+→ fast_table 比内置 table 快约 42%（(539.9-314.0)/539.9 ≈ 0.42）
+平均耗时：base_table（612.8 微秒） vs fast_table（319.9 微秒）
+→ 平均速度提升近 50%，且 lq（较低分位数）和 uq（较高分位数）都更优
+
+基础卡方检验 vs 优化卡方检验（整体速度）
+中位数耗时：base_chisq（784.8 微秒） vs fast_chisq2（242.9 微秒）
+→ fast_chisq2 比内置 chisq.test 快约 69%（(784.8-242.9)/784.8 ≈ 0.69）
+平均耗时：base_chisq（821.7 微秒） vs fast_chisq2（370.8 微秒）
+→ 平均速度提升近 55%
+
+### 6
+
+lapply()：不支持多输入并行迭代，输出非结构化（需手动转换向量 / 矩阵）
+
+Map()：输出固定为列表，无法直接得到向量 / 矩阵（需额外用sapply/vapply转换）
+
+vapply()：仅支持单输入迭代（无法同时处理多个长度相同的输入）
+
+核心思路：用Map()解决 “多输入迭代”，用vapply()解决 “结构化输出”，两者串联形成闭环。
+
+```{r echo=FALSE}
+
+# 1. 定义核心函数 map_vapply
+map_vapply <- function(..., FUN, FUN.VALUE, USE.NAMES = TRUE) {
+  # 输入验证：确保参数合法（避免隐性错误）
+  if (!is.function(FUN)) {
+    stop("参数FUN必须是函数！例如 sum、function(x,y) x*y")
+  }
+  if (missing(FUN.VALUE)) {
+    stop("必须指定FUN.VALUE（输出类型模板）：\n",
+         "- 输出标量：FUN.VALUE = numeric(1)\n",
+         "- 输出双元素：FUN.VALUE = numeric(2)\n",
+         "- 输出字符：FUN.VALUE = character(1)")
+  }
+  
+  # 步骤1：多输入并行迭代（Map()按对应元素处理，返回列表）
+  # 关键：Map()的函数参数名是f（小写），而非FUN
+  res_list <- Map(f = FUN, ...)
+  
+  # 步骤2：列表转结构化输出（vapply()强类型约束，输出向量/矩阵）
+  # 关键：vapply()不支持SIMPLIFY参数，仅保留USE.NAMES
+  res <- vapply(
+    X = res_list,
+    FUN = identity,  # 仅提取列表元素，不额外计算（Map已执行FUN）
+    FUN.VALUE = FUN.VALUE,
+    USE.NAMES = USE.NAMES
+  )
+  
+  # 步骤3：优化矩阵维度（转置为“每行一次迭代”，符合直觉）
+  if (length(FUN.VALUE) > 1) {
+    res <- t(res)
+  }
+  
+  return(res)
+}
+
+# 2. 定义测试用输入变量
+# 场景1：双输入向量（用于标量输出测试）
+input_a <- 1:5                  # 整数向量
+input_b <- sample(10:20, 5)     # 随机整数向量
+# 场景2：三输入（向量+向量+列表，用于多元素输出测试）
+input_c <- list(x=1:3, y=4:6, z=7:9, w=10:12, v=13:15)  # 列表（长度5）
+# 场景3：带名称的输入（用于名称保留测试）
+named_input <- setNames(input_a, letters[1:5])  # 命名向量（a=1, b=2, ..., e=5）
+
+# 3. 多场景测试（验证函数功能，可直接运行查看结果）
+cat("=== 测试1：双输入 + 标量输出（求和→向量） ===\n")
+res_scalar <- map_vapply(
+  input_a, input_b,
+  FUN = sum,                # 迭代函数：两元素求和
+  FUN.VALUE = numeric(1)    # 输出类型：标量数值
+)
+print(res_scalar)
+cat("结果类型：", class(res_scalar), " | 结果长度：", length(res_scalar), "\n\n")
+
+cat("=== 测试2：三输入 + 多元素输出（均值+标准差→矩阵） ===\n")
+# 自定义迭代函数：合并三个输入，返回均值和标准差
+calc_stats <- function(x, y, z) {
+  combined <- c(x, y, z)
+  return(c(mean_val = mean(combined), sd_val = sd(combined)))
+}
+res_matrix <- map_vapply(
+  input_a, input_b, input_c,
+  FUN = calc_stats,         # 自定义多元素输出函数
+  FUN.VALUE = numeric(2)    # 输出类型：双元素数值（转为矩阵）
+)
+print(res_matrix)
+cat("结果维度：", dim(res_matrix), " | 结果类型：", class(res_matrix), "\n\n")
+
+cat("=== 测试3：带名称输入 + 自定义逻辑（乘积→保留名称） ===\n")
+res_named <- map_vapply(
+  named_input, input_b,
+  FUN = function(x, y) x * y,  # 自定义函数：两元素乘积
+  FUN.VALUE = numeric(1)
+)
+print(res_named)
+cat("是否保留名称：", !is.null(names(res_named)), "\n")
+```

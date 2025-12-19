@@ -1,0 +1,394 @@
+---
+title: "A-SA25204160-2025-09-25"
+author: "SA25204160"
+date: "2025-10-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question
+
+### 6.4
+编写一个函数来计算Beta(3,3)分布累积分布函数的蒙特卡洛估计值，并使用该函数估计x=0.1,0.2,...,0.9时的F(x)。将估计值与 R 语言中 pbeta 函数返回的值进行比较
+
+### 6.6
+在例 6.7 中，针对蒙特卡洛积分
+
+$\theta =\int_{0}^{1} e^{x} dx$
+
+阐述了控制变量法。现在考虑对立变量法。计算$Cov(e^{U},e^{1-U})$和$Var(e^{U}+e^{1-U})$,其中U~Uniform(0,1).与简单蒙特卡洛方法相比，使用对立变量法能使$\theta$的方差减少百分之多少？
+
+### 6.13
+找出两个定义域在$(1,\infty )$上且“接近”函数
+
+$g(x)= \frac{x^2}{\sqrt{2\pi } } e^{-x^2/2},x>1$
+
+的函数$f_1$,$f_2$在通过重要性采样估计
+
+$\int_{1}^{\infty } \frac{x^2}{\sqrt{2\pi } } e^{-x^2/2}dx$
+
+时，你的两个重要性函数中哪一个应产生较小的方差？请解释。
+
+
+### Monte Carlo experiment
+对于$n=10^4,2*10^4,4*10^4,6*10^4,8*10^4$，将快速排序算法（R 函数 sort）应用于随机排列的数字1,...,n。
+
+使用 R 函数 rbenchmark::benchmark 计算计算时间（重复 1000 次），记为$a_n$。
+
+将$a_n$对$t_n:=nlog(n)$进行回归，并以图形方式展示结果（散点图和回归线）。
+
+
+## Answer
+### 6.4
+#### 6.4.1 设置数据并且计算蒙特卡洛估计
+```{r echo=FALSE}
+# 设置随机种子以保证结果可重现
+set.seed(123)
+
+# 定义蒙特卡洛估计 Beta(3,3) CDF 的函数
+monte_carlo_beta_cdf <- function(x, alpha = 3, beta = 3, n_sim = 10000) {
+  # 从 Beta(alpha, beta) 分布生成随机样本
+  samples <- rbeta(n_sim, alpha, beta)
+  
+  # 计算经验 CDF：P(X <= x) 的估计
+  mean(samples <= x)
+}
+
+# 要评估的 x 值
+x_values <- seq(0.1, 0.9, by = 0.1)
+
+# 使用蒙特卡洛方法计算估计值
+mc_estimates <- sapply(x_values, monte_carlo_beta_cdf)
+```
+#### 6.4.2 与 pbeta 函数的结果进行比较
+```{r echo=FALSE}
+# 使用 pbeta 函数计算精确值
+exact_values <- pbeta(x_values, 3, 3)
+
+# 创建比较表格
+results <- data.frame(
+  x = x_values,
+  Monte_Carlo = mc_estimates,
+  Exact = exact_values,
+  Absolute_Error = abs(mc_estimates - exact_values),
+  Relative_Error = abs(mc_estimates - exact_values) / exact_values
+)
+
+# 打印结果
+print("Beta(3,3) CDF 的蒙特卡洛估计与精确值比较:")
+print(results)
+
+# 可视化比较
+plot(x_values, exact_values, type = "b", col = "blue", lwd = 2,
+     xlab = "x", ylab = "F(x)", 
+     main = "Beta(3,3) CDF: 蒙特卡洛估计 vs 精确值",
+     ylim = range(c(mc_estimates, exact_values)))
+points(x_values, mc_estimates, col = "red", pch = 16)
+lines(x_values, mc_estimates, col = "red", lty = 2)
+legend("topleft", legend = c("精确值 (pbeta)", "蒙特卡洛估计"),
+       col = c("blue", "red"), lty = c(1, 2), pch = c(1, 16))
+
+# 绘制误差图
+plot(x_values, results$Absolute_Error, type = "b",
+     xlab = "x", ylab = "绝对误差",
+     main = "蒙特卡洛估计的绝对误差")
+abline(h = 0, col = "gray", lty = 2)
+
+# 输出统计摘要
+cat("\n误差统计摘要:\n")
+cat("平均绝对误差:", mean(results$Absolute_Error), "\n")
+cat("最大绝对误差:", max(results$Absolute_Error), "\n")
+cat("平均相对误差:", mean(results$Relative_Error), "\n")
+```
+蒙特卡洛方法在估计 Beta分布 CDF 方面的性能较好
+
+### 6.6
+#### 6.6.1 计算协方差并进行分析
+```{r echo=FALSE}
+
+# 定义函数
+f <- function(u) {
+  exp_u <- exp(u)
+  exp_1_minus_u <- exp(1-u)
+  return(exp_u * exp_1_minus_u)
+}
+
+# 计算 E[e^U * e^(1-U)]
+E_XY <- integrate(f, 0, 1)$value
+
+# 计算 E[e^U] 和 E[e^(1-U)]
+E_X <- integrate(function(u) exp(u), 0, 1)$value
+E_Y <- integrate(function(u) exp(1-u), 0, 1)$value
+
+# 计算协方差
+cov_XY <- E_XY - E_X * E_Y
+
+# 计算 Var(e^U + e^(1-U))
+# 首先计算 E[(e^U + e^(1-U))^2]
+g <- function(u) {
+  (exp(u) + exp(1-u))^2
+}
+
+E_sum_sq <- integrate(g, 0, 1)$value
+
+# 计算 E[e^U + e^(1-U)]
+E_sum <- E_X + E_Y
+
+# 计算方差
+var_sum <- E_sum_sq - E_sum^2
+
+# 计算简单蒙特卡洛方法的方差（使用e^U）
+# Var(e^U) = E[e^(2U)] - (E[e^U])^2
+h <- function(u) exp(2*u)
+E_X2 <- integrate(h, 0, 1)$value
+var_simple <- E_X2 - E_X^2
+
+# 计算方差减少百分比
+reduction_percent <- (var_simple - var_sum/2) / var_simple * 100
+
+# 输出结果
+cat("Cov(e^U, e^(1-U)) =", cov_XY, "\n")
+cat("Var(e^U + e^(1-U)) =", var_sum, "\n")
+cat("简单蒙特卡洛方法的方差 (Var(e^U)) =", var_simple, "\n")
+cat("使用对立变量法的估计量方差 =", var_sum/2, "\n")
+cat("方差减少百分比 =", reduction_percent, "%\n")
+```
+
+
+### 6.13
+#### 6.13.1 初始设置
+```{r echo=FALSE}
+# 目标函数 g(x)
+g <- function(x) {
+  (x^2 / sqrt(2 * pi)) * exp(-x^2 / 2)
+}
+
+# 真实积分值（用于比较）
+true_integral <- integrate(g, 1, Inf)$value
+cat("真实积分值:", true_integral, "\n")
+```
+
+#### 6.13.2 方法1：使用截断指数分布作为重要性函数
+```{r echo=FALSE}
+# 指数分布参数，通过匹配矩或最大似然估计得到
+lambda1 <- 1.5  # 选择的参数
+
+# 截断指数分布的密度函数 (x > 1)
+f1 <- function(x, lambda = lambda1) {
+  lambda * exp(-lambda * (x - 1))
+}
+
+# 从f1生成样本的函数
+sample_f1 <- function(n, lambda = lambda1) {
+  1 + rexp(n, rate = lambda)
+}
+
+# 重要性采样估计函数 
+importance_sample1 <- function(n) {
+  samples <- sample_f1(n)
+  weights <- g(samples) / f1(samples)
+  estimate <- mean(weights)
+  variance <- var(weights) / n
+  return(list(estimate = estimate, variance = variance, samples = samples, weights = weights))
+}
+
+```
+
+#### 6.13.3 方法2：使用截断正态分布作为重要性函数
+```{r echo=FALSE}
+# 选择均值和标准差参数
+mu2 <- 1.5
+sigma2 <- 0.8
+
+# 截断正态分布的密度函数 (x > 1)
+f2 <- function(x, mu = mu2, sigma = sigma2) {
+  dnorm(x, mean = mu, sd = sigma) / (1 - pnorm(1, mean = mu, sd = sigma))
+}
+
+# 从f2生成样本的函数（使用接受-拒绝法）
+sample_f2 <- function(n, mu = mu2, sigma = sigma2) {
+  samples <- c()
+  while (length(samples) < n) {
+    # 从正态分布提议
+    x <- rnorm(1, mean = mu, sd = sigma)
+    if (x > 1) {
+      samples <- c(samples, x)
+    }
+  }
+  return(samples)
+}
+
+# 重要性采样估计函数 
+importance_sample2 <- function(n) {
+  samples <- sample_f2(n)
+  weights <- g(samples) / f2(samples)
+  estimate <- mean(weights)
+  variance <- var(weights) / n
+  return(list(estimate = estimate, variance = variance, samples = samples, weights = weights))
+}
+```
+
+#### 6.13.4 比较两种方法并设置数据、比较结果
+```{r echo=FALSE}
+# 比较两种方法
+set.seed(123)
+n <- 10000
+
+# 运行重要性采样
+result1 <- importance_sample1(n)
+result2 <- importance_sample2(n)
+
+# 输出结果
+cat("\n方法1 (截断指数分布):\n")
+cat("估计值:", result1$estimate, "\n")
+cat("方差:", result1$variance, "\n")
+cat("相对误差:", abs(result1$estimate - true_integral) / true_integral, "\n")
+
+cat("\n方法2 (截断正态分布):\n")
+cat("估计值:", result2$estimate, "\n")
+cat("方差:", result2$variance, "\n")
+cat("相对误差:", abs(result2$estimate - true_integral) / true_integral, "\n")
+
+# 可视化比较
+par(mfrow = c(2, 2))
+
+# 绘制目标函数和重要性函数
+x_vals <- seq(1, 5, length.out = 1000)
+plot(x_vals, g(x_vals), type = "l", lwd = 2, col = "black", 
+     main = "目标函数和重要性函数", xlab = "x", ylab = "密度")
+lines(x_vals, f1(x_vals), col = "red", lwd = 2)
+lines(x_vals, f2(x_vals), col = "blue", lwd = 2)
+legend("topright", legend = c("g(x)", "f1(x)", "f2(x)"), 
+       col = c("black", "red", "blue"), lwd = 2)
+
+# 绘制权重分布
+hist(result1$weights, breaks = 50, main = "方法1的权重分布", 
+     xlab = "权重", col = rgb(1, 0, 0, 0.5))
+hist(result2$weights, breaks = 50, main = "方法2的权重分布", 
+     xlab = "权重", col = rgb(0, 0, 1, 0.5))
+
+# 多次重复实验比较方差
+n_repeats <- 100
+n_per_experiment <- 1000
+
+variances1 <- numeric(n_repeats)
+variances2 <- numeric(n_repeats)
+
+for (i in 1:n_repeats) {
+  res1 <- importance_sample1(n_per_experiment)
+  res2 <- importance_sample2(n_per_experiment)
+  variances1[i] <- res1$variance
+  variances2[i] <- res2$variance
+}
+
+# 绘制方差比较
+boxplot(list("方法1" = variances1, "方法2" = variances2),
+        main = "方差比较", ylab = "方差", col = c("red", "blue"))
+
+# 输出统计比较
+cat("\n方差比较 (基于", n_repeats, "次重复实验):\n")
+cat("方法1平均方差:", mean(variances1), "\n")
+cat("方法2平均方差:", mean(variances2), "\n")
+cat("方差比 (方法1/方法2):", mean(variances1) / mean(variances2), "\n")
+
+# 重置图形参数
+par(mfrow = c(1, 1))
+
+# 结论分析
+cat("\n结论分析:\n")
+if (mean(variances1) > mean(variances2)) {
+  cat("方法2 (截断正态分布) 产生更小的方差，因为其形状更接近目标函数 g(x)。\n")
+  cat("截断正态分布能更好地匹配目标函数的形状，特别是在尾部行为上。\n")
+} else {
+  cat("方法1 (截断指数分布) 产生更小的方差。\n")
+  cat("在这种情况下，指数分布可能更好地近似了目标函数的衰减特性。\n")
+}
+
+# 额外分析：计算效率因子
+cat("\n效率分析:\n")
+efficiency_ratio <- mean(variances2) / mean(variances1)
+cat("效率比 (方法2/方法1):", efficiency_ratio, "\n")
+if (efficiency_ratio > 1) {
+  cat("方法1比方法2效率高", round(efficiency_ratio, 2), "倍\n")
+} else {
+  cat("方法2比方法1效率高", round(1/efficiency_ratio, 2), "倍\n")
+}
+```
+
+### Monte Carlo experiment
+```{r echo=FALSE}
+# 加载必要的包
+library(rbenchmark)
+library(ggplot2)
+
+# 设置随机种子以保证结果可重现
+set.seed(123)
+
+# 定义n值序列
+n_values <- c(1e4, 2e4, 4e4, 6e4, 8e4)
+
+# 初始化存储结果的向量
+a_n <- numeric(length(n_values))
+t_n <- numeric(length(n_values))
+
+# 对每个n值进行基准测试
+for (i in seq_along(n_values)) {
+  n <- n_values[i]
+  
+  # 使用benchmark函数测量计算时间，重复1000次
+  benchmark_result <- benchmark(
+    {
+      x <- sample(n)  # 生成1到n的随机排列
+      sorted <- sort(x)  # 对随机排列进行排序
+    },
+    replications = 1000,
+    columns = c("elapsed")
+  )
+  
+  # 记录平均计算时间（秒）
+  a_n[i] <- mean(benchmark_result$elapsed)
+  
+  # 计算t_n = n * log(n)
+  t_n[i] <- n * log(n)
+  
+  cat(sprintf("n = %d: 平均计算时间 = %.4f 秒\n", n, a_n[i]))
+}
+
+# 创建数据框用于回归分析
+data <- data.frame(t_n = t_n, a_n = a_n)
+
+# 执行线性回归：a_n ~ t_n
+regression <- lm(a_n ~ t_n, data = data)
+
+# 输出回归结果摘要
+cat("\n回归分析结果:\n")
+print(summary(regression))
+
+# 创建散点图和回归线
+p <- ggplot(data, aes(x = t_n, y = a_n)) +
+  geom_point(size = 3, color = "blue") +  # 散点
+  geom_smooth(method = "lm", se = TRUE, color = "red", linetype = "dashed") +  # 回归线
+  labs(
+    title = "排序算法计算时间与 n log(n) 的关系",
+    x = expression(t[n] == n ~ log(n)),
+    y = expression(a[n] ~ "(计算时间, 秒)"),
+    caption = paste("回归方程: a_n =", 
+                   round(coef(regression)[1], 6), "+", 
+                   round(coef(regression)[2], 9), "* t_n")
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+# 显示图形
+print(p)
+
+# 显示数据表格
+cat("\n详细数据:\n")
+print(data)
+```

@@ -1,0 +1,277 @@
+---
+title: "A-SA25204160-2025-11-10"
+author: "SA25204160"
+date: "2025-11-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question
+
+### 11.6
+实现一个随机游走 Metropolis 采样器，用于生成标准拉普拉斯分布（参见练习 3.3.2）。对于增量，从正态分布中模拟。比较当建议分布使用不同方差时生成的链。同时，计算每条链的接受率。
+
+### 11.10
+此例出现在 [41] 中。考虑二元密度
+
+$f(x,y) \propto \binom{n}{x} y^{x+a-1} (1-y)^{n-x+b-1}, \quad x = 0,1,\ldots,n,\ 0 \leq y \leq 1.$
+
+可以证明对于固定的 $a,b,n$，条件分布为：
+
+$X \mid Y = y \sim \text{Binomial}(n, y)$
+
+$Y \mid X = x \sim \text{Beta}(x + a, n - x + b)$
+
+使用 Gibbs 采样器生成一个目标联合密度为 f(x,y) 的链。
+
+### homework
+
+考虑模型：$P(Y=1|X_1, X_2, X_3) = \frac{1}{1+e^{-(a+b_1X_1+b_2X_2+b_3X_3)}}$,其中：$X_1 \sim \text{Poi}(1)$,$X_2 \sim \text{Exp}(1)$,$X_3 \sim \text{B}(1, 0.5)$,
+
+(1):编写一个函数实现类似于 P11 的功能,其输入参数为 $N, b_1, b_2, b_3, f_0$，输出值为 $\alpha$。
+
+(2):调用该函数，输入参数为 $N = 10^6, b_1 = 1, b_2 = 1, b_3 = -1$，$f_0 = 0.1, 0.01, 0.001, 0.0001$。
+
+(3):绘制 $-\log(f_0)$ 与 $\alpha$ 的散点图。
+
+
+
+## Answer
+### 11.6
+#### 11.6.1
+定义目标分布 - 标准拉普拉斯分布
+```{r echo=FALSE}
+target_density <- function(x) {
+  0.5 * exp(-abs(x))
+}
+```
+
+#### 11.6.2
+实现随机游走Metropolis采样器
+```{r echo=FALSE}
+rw_metropolis <- function(n_iter, sigma_proposal, x_init = 0) {
+  # 初始化
+  x <- numeric(n_iter)
+  x[1] <- x_init
+  accepted <- 0
+  
+  for (i in 2:n_iter) {
+    # 从建议分布生成候选值 (正态分布)
+    x_candidate <- x[i-1] + rnorm(1, 0, sigma_proposal)
+    
+    # 计算接受概率
+    acceptance_ratio <- target_density(x_candidate) / target_density(x[i-1])
+    alpha <- min(1, acceptance_ratio)
+    
+    # 接受或拒绝候选值
+    if (runif(1) <= alpha) {
+      x[i] <- x_candidate
+      accepted <- accepted + 1
+    } else {
+      x[i] <- x[i-1]
+    }
+  }
+  
+  # 计算接受率
+  acceptance_rate <- accepted / (n_iter - 1)
+  
+  return(list(
+    chain = x,
+    acceptance_rate = acceptance_rate
+  ))
+}
+```
+#### 11.6.3
+使用不同方差的建议分布运行链
+```{r echo=FALSE}
+set.seed(123)
+n_iter <- 10000
+sigmas <- c(0.1, 0.5, 1, 2, 5)  # 不同的提议方差
+
+results_11_6 <- list()
+acceptance_rates <- numeric(length(sigmas))
+
+for (j in 1:length(sigmas)) {
+  results_11_6[[j]] <- rw_metropolis(n_iter, sigma_proposal = sigmas[j])
+  acceptance_rates[j] <- results_11_6[[j]]$acceptance_rate
+}
+```
+
+#### 11.6.4
+比较结果
+```{r echo=FALSE}
+cat("=== 练习题 11.6 结果 ===\n")
+for (j in 1:length(sigmas)) {
+  cat(sprintf("提议方差 = %.1f, 接受率 = %.3f\n", 
+              sigmas[j], acceptance_rates[j]))
+}
+```
+
+#### 11.6.5
+可视化比较
+```{r echo=FALSE}
+par(mfrow = c(2, 3))
+for (j in 1:length(sigmas)) {
+  plot(results_11_6[[j]]$chain[1:1000], type = "l", 
+       main = paste("方差 =", sigmas[j]),
+       xlab = "迭代", ylab = "链值")
+}
+
+# 绘制直方图与真实密度比较
+par(mfrow = c(2, 3))
+x_true <- seq(-5, 5, length.out = 1000)
+for (j in 1:length(sigmas)) {
+  hist(results_11_6[[j]]$chain[1001:n_iter], breaks = 50, freq = FALSE,
+       main = paste("方差 =", sigmas[j]), xlab = "x")
+  lines(x_true, target_density(x_true), col = "red", lwd = 2)
+  legend("topright", legend = c("模拟", "真实"), 
+         col = c("black", "red"), lty = 1)
+}
+
+# 重置图形参数
+par(mfrow = c(1, 1))
+```
+
+### 11.10
+#### 11.10.1
+定义参数
+```{r echo=FALSE}
+n_gibbs <- 10000  # Gibbs采样迭代次数
+a <- 2           # Beta分布参数a
+b <- 3           # Beta分布参数b  
+n_binomial <- 10 # 二项分布试验次数
+```
+
+#### 11.10.2
+实现Gibbs采样器
+```{r echo=FALSE}
+gibbs_sampler <- function(n_iter, a, b, n_binomial, x_init = 5, y_init = 0.5) {
+  # 初始化
+  x_chain <- numeric(n_iter)
+  y_chain <- numeric(n_iter)
+  x_chain[1] <- x_init
+  y_chain[1] <- y_init
+  
+  for (i in 2:n_iter) {
+    # 从条件分布中抽样
+    
+    # 1. 给定y，从Binomial(n, y)中抽取x
+    x_chain[i] <- rbinom(1, size = n_binomial, prob = y_chain[i-1])
+    
+    # 2. 给定x，从Beta(x + a, n - x + b)中抽取y
+    y_chain[i] <- rbeta(1, shape1 = x_chain[i] + a, 
+                        shape2 = n_binomial - x_chain[i] + b)
+  }
+  
+  return(list(x = x_chain, y = y_chain))
+}
+```
+
+#### 11.10.3
+运行Gibbs采样器
+```{r echo=FALSE}
+set.seed(123)
+results_11_10 <- gibbs_sampler(n_gibbs, a, b, n_binomial)
+
+```
+
+#### 11.10.4
+分析结果
+```{r echo=FALSE}
+cat("=== 练习题 11.10 结果 ===\n")
+cat(sprintf("x的均值: %.3f\n", mean(results_11_10$x)))
+cat(sprintf("y的均值: %.3f\n", mean(results_11_10$y)))
+cat(sprintf("x的方差: %.3f\n", var(results_11_10$x)))
+cat(sprintf("y的方差: %.3f\n", var(results_11_10$y)))
+
+```
+
+#### 11.10.5
+可视化
+```{r echo=FALSE}
+# 绘制链的轨迹
+par(mfrow = c(2, 2))
+plot(results_11_10$x, type = "l", main = "x的轨迹", ylab = "x")
+plot(results_11_10$y, type = "l", main = "y的轨迹", ylab = "y")
+
+# 绘制散点图
+plot(results_11_10$x, results_11_10$y, pch = ".", 
+     main = "x和y的联合分布", xlab = "x", ylab = "y")
+
+# 绘制边际分布直方图
+hist(results_11_10$x, breaks = 30, main = "x的边际分布", xlab = "x")
+hist(results_11_10$y, breaks = 30, main = "y的边际分布", xlab = "y")
+
+# 重置图形参数
+par(mfrow = c(1, 1))
+```
+
+### homework
+#### (1)
+定义求解alpha的函数
+```{r echo=FALSE}
+solve_alpha <- function(N, b1, b2, b3, f0) {
+  # 生成协变量
+  x1 <- rpois(N, lambda = 1)      # 泊松分布，λ=1
+  x2 <- rexp(N, rate = 1)         # 指数分布，率参数=1
+  x3 <- rbinom(N, size = 1, prob = 0.5)  # 伯努利分布，p=0.5
+  
+  # 定义目标函数：平均概率 - f0 = 0
+  g <- function(alpha) {
+    tmp <- exp(-alpha - b1*x1 - b2*x2 - b3*x3)
+    p <- 1 / (1 + tmp)
+    mean(p) - f0
+  }
+  
+  # 扩大区间左端点（更负），确保两端符号相反
+  solution <- uniroot(g, interval = c(-30, 10))  # 关键修改：将左端点从-10改为-30
+  
+  return(solution$root)
+}
+```
+
+#### (2)
+调用函数计算不同f0对应的alpha
+```{r echo=FALSE}
+set.seed(12345)
+N <- 1e6
+b1 <- 1
+b2 <- 1
+b3 <- -1
+f0_values <- c(0.1, 0.01, 0.001, 0.0001)
+
+alpha_values <- numeric(length(f0_values))
+
+cat("=== 课后作业结果 ===\n")
+for (i in 1:length(f0_values)) {
+  alpha_values[i] <- solve_alpha(N, b1, b2, b3, f0_values[i])
+  cat(sprintf("f0 = %.4f, alpha = %.5f\n", f0_values[i], alpha_values[i]))
+}
+```
+
+#### (3)
+绘制 -log(f0) vs alpha 散点图
+```{r echo=FALSE}
+neg_log_f0 <- -log(f0_values)
+
+plot(neg_log_f0, alpha_values, 
+     xlab = "-log(f0)", ylab = "alpha",
+     main = "-log(f0) 与 alpha 的关系",
+     pch = 19, col = "blue", cex = 1.5)
+
+# 添加回归线
+abline(lm(alpha_values ~ neg_log_f0), col = "red", lwd = 2)
+
+# 添加点标签
+text(neg_log_f0, alpha_values, 
+     labels = round(alpha_values, 3), 
+     pos = 3, cex = 0.8)
+
+legend("topleft", legend = c("数据点", "回归线"), 
+       col = c("blue", "red"), pch = c(19, NA), lty = c(NA, 1))
+correlation <- cor(neg_log_f0, alpha_values)
+cat(sprintf("\n-log(f0) 与 alpha 的相关系数: %.4f\n", correlation))
+```

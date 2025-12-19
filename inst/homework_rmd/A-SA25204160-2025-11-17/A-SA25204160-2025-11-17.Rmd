@@ -1,0 +1,268 @@
+---
+title: "A-SA25204160-2025-11-17"
+author: "SA25204160"
+date: "2025-11-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question
+
+### 11.4
+
+参考例 11.3 中的贝叶斯预测应用，采用几何分布Geometric(p)生存模型。证明推导得到的参数$\psi =\frac{p}{1-p}$不依赖于该模型中个体的已达年龄。（一般来说，这对其他模型并不成立。）
+
+### 14.1
+使用单纯形算法解决以下问题：
+
+约束条件：
+
+2x+y+z≤2
+
+x−y+3z≤3
+
+x≥0,y≥0,z≥0
+
+### 课后习题
+设$X_1,...,X_n\overset{iid}{\sim } Exp(\lambda)$,因为某种原因，只知道$X_i$落在区间$(u_i,v_i)$，其中$u_i<v_i$非随机。—— 区间删失数据。
+
+(1) 试分别直接极大化观测数据的似然函数与采用 EM 算法求解$\lambda$的 MLE。证明 EM 算法收敛于观测数据的 MLE，且收敛有线性速度。
+
+(2) 设$(u_i,v_i)$,i=1,⋯,n(=10)的观测值为 (11,12)，(8,9)，(27,28)，(13,14)，(16,17)，(0,1)，(23,24)，(10,11)，(24,25)，(2,3)
+试分别编程实现上述两种算法并比较结果。
+
+(3) 数值比较两个算法的收敛速度
+
+
+## Answer
+### 课后习题
+#### (0) 环境准备与数据输入
+首先定义题目给出的区间删失数据
+```{r echo=FALSE}
+# 1. 输入题目中的区间删失数据（u_i, v_i）
+u <- c(11, 8, 27, 13, 16, 0, 23, 10, 24, 2)  # 每个观测的下界
+v <- c(12, 9, 28, 14, 17, 1, 24, 11, 25, 3)  # 每个观测的上界
+n <- length(u)  # 样本量n=10
+
+# 2. 设定算法参数
+lambda_init <- 0.05  # 初始值（根据数据中点均值估计：中点均值≈15，1/15≈0.066，选0.05避免初始值过优）
+tol <- 1e-8          # 收敛阈值（两次迭代差值小于该值则停止）
+max_iter <- 1000     # 最大迭代次数（防止无限循环）
+```
+
+#### (1) 直接极大化似然函数（MLE 直接法）
+利用指数分布区间删失数据的对数似然函，数通过数值优化（L-BFGS-B 算法，支持下界约束 λ>0）最大化该函数。
+```{r echo=FALSE}
+# 1. 定义对数似然函数（注意：optim默认最小化，因此返回负对数似然）
+neg_log_likelihood <- function(lambda) {
+  if (lambda <= 0) return(Inf)  # 避免λ≤0导致数值错误
+  # 计算每个观测的区间概率对数
+  log_prob <- log(exp(-lambda * u) - exp(-lambda * v))
+  -sum(log_prob)  # 返回负对数似然（供optim最小化）
+}
+
+# 2. 数值优化求解MLE（L-BFGS-B算法，下界lambda>0）
+direct_mle <- optim(
+  par = lambda_init,          # 初始值
+  fn = neg_log_likelihood,    # 目标函数（负对数似然）
+  method = "L-BFGS-B",        # 带边界约束的优化方法
+  lower = 1e-10,              # λ的下界（接近0，避免数值问题）
+  control = list(trace = 1)   # trace=1显示优化过程（可选）
+)
+
+# 3. 提取直接法结果
+lambda_direct <- direct_mle$par  # 直接法MLE估计值
+converge_direct <- direct_mle$convergence  # 收敛状态（0=收敛）
+iter_direct <- direct_mle$counts[1]        # 优化迭代次数
+cat("=== 直接极大化似然法结果 ===\n")
+cat("λ的MLE估计值：", round(lambda_direct, 6), "\n")
+cat("收敛状态（0=成功）：", converge_direct, "\n")
+cat("迭代次数：", iter_direct, "\n\n")
+```
+
+#### (2) EM 算法实现
+潜变量：未观测到的原始数据$X_i$（仅知道 $X_i\in （u_i,v_i）$）
+
+E步：计算$E\left [ X_i |u_i<X_i<v_i,\lambda^{(t)} \right ]$（指数分布区间条件期望）
+
+M 步：更新$ \lambda^{(t+1)}=n/\sum E\left [ X_i|\lambda^{(t)} \right ] $完整数据 MLE）
+
+```{r echo=FALSE}
+# 1. 定义指数分布区间条件期望函数（E[X | u < X < v, λ]）
+cond_exp_exp <- function(lambda, u_i, v_i) {
+  # 指数分布CDF：F(x)=1-exp(-λx)，区间概率P= F(v_i)-F(u_i)
+  P <- exp(-lambda * u_i) - exp(-lambda * v_i)
+  if (P < 1e-16) return((u_i + v_i)/2)  # 避免P过小时的数值错误
+  
+  # 条件期望公式（推导见思考过程）
+  integral_x <- (-v_i * exp(-lambda * v_i) + u_i * exp(-lambda * u_i)) + 
+    (exp(-lambda * u_i) - exp(-lambda * v_i)) / lambda
+  cond_exp <- integral_x / P
+  return(cond_exp)
+}
+
+# 2. EM算法迭代
+em_iter <- function(init_lambda, u, v, tol, max_iter) {
+  lambda_t <- init_lambda  # 初始值
+  lambda_history <- lambda_t  # 记录迭代历史（用于收敛分析）
+  iter <- 0                  # 迭代计数
+  
+  while (iter < max_iter) {
+    # E步：计算所有X_i的条件期望之和
+    cond_exp_sum <- sum(sapply(1:n, function(i) {
+      cond_exp_exp(lambda_t, u[i], v[i])
+    }))
+    
+    # M步：更新λ（完整数据MLE）
+    lambda_t1 <- n / cond_exp_sum
+    
+    # 记录迭代历史
+    lambda_history <- c(lambda_history, lambda_t1)
+    
+    # 收敛判断
+    if (abs(lambda_t1 - lambda_t) < tol) break
+    
+    # 更新迭代
+    lambda_t <- lambda_t1
+    iter <- iter + 1
+  }
+  
+  # 返回结果
+  list(
+    lambda_mle = lambda_t1,        # EM算法MLE估计值
+    iter_count = iter,             # 迭代次数
+    lambda_history = lambda_history# 迭代历史
+  )
+}
+
+# 3. 运行EM算法
+em_result <- em_iter(
+  init_lambda = lambda_init,
+  u = u,
+  v = v,
+  tol = tol,
+  max_iter = max_iter
+)
+
+# 4. 提取EM算法结果
+lambda_em <- em_result$lambda_mle
+iter_em <- em_result$iter_count
+lambda_em_history <- em_result$lambda_history
+cat("=== EM算法结果 ===\n")
+cat("λ的MLE估计值：", round(lambda_em, 6), "\n")
+cat("迭代次数：", iter_em, "\n\n")
+```
+
+#### (3) 结果比较
+```{r echo=FALSE}
+# 结果对比表
+comparison <- data.frame(
+  算法 = c("直接极大化似然", "EM算法"),
+  λ_MLE = round(c(lambda_direct, lambda_em), 6),
+  迭代次数 = c(iter_direct, iter_em),
+  收敛状态 = c(ifelse(converge_direct==0, "成功", "失败"), "成功")
+)
+print(comparison, row.names = FALSE)
+
+# 计算两种方法的绝对误差
+error <- abs(lambda_direct - lambda_em)
+cat("\n两种方法的MLE绝对误差：", round(error, 10), "\n")
+```
+
+### 11.4 
+几何分布Geometric(p)具有无记忆性，即 “已达年龄不影响剩余生存时间的分布”。因此，参数$\psi =\frac{p}{1-p}$期望剩余寿命）仅依赖于p，与已达年龄无关。
+
+```{r echo =FALSE}
+# 定义psi = p/(1-p)的后验密度（含雅可比变换）
+post_psi <- function(psi, alpha, beta) {
+  p <- psi / (1 + psi)  # 由psi转换为p
+  # 后验为Beta(alpha, beta)，例11.3中alpha=5, beta=432（4次失败，431次成功）
+  dbeta(p, shape1 = alpha, shape2 = beta, log = TRUE) + 
+    log(1 / (1 + psi)^2)  # 雅可比行列式：dp/dpsi = 1/(1+psi)^2
+}
+
+# MCMC参数设置
+n_iter <- 10000  # 迭代次数
+burn_in <- 1000  #  burn-in期
+psi_chain <- numeric(n_iter)
+psi_chain[1] <- 0.01  # 初始值
+accept <- 0  # 接受计数
+
+# Metropolis-Hastings算法
+for (i in 2:n_iter) {
+  psi_current <- psi_chain[i-1]
+  # 提议分布：正态分布（调优方差为0.001）
+  psi_proposal <- rnorm(1, mean = psi_current, sd = 0.001)
+  if (psi_proposal < 0) psi_proposal <- 0.0001  # 保证psi>0
+  
+  # 计算接受概率
+  log_r <- post_psi(psi_proposal, 5, 432) - post_psi(psi_current, 5, 432)
+  r <- exp(log_r)
+  if (runif(1) < min(r, 1)) {
+    psi_chain[i] <- psi_proposal
+    accept <- accept + 1
+  } else {
+    psi_chain[i] <- psi_current
+  }
+}
+
+# 去除burn-in并分析结果
+psi_chain_burned <- psi_chain[(burn_in+1):n_iter]
+accept_rate <- accept / (n_iter - 1)
+
+# 输出接受率
+cat("MCMC接受率：", accept_rate, "\n")
+
+# 绘制结果
+par(mfrow = c(2, 1))
+# 链轨迹图
+plot(psi_chain, type = "l", 
+     main = "psi = p/(1-p)的MCMC链轨迹", 
+     xlab = "迭代次数", ylab = "psi值")
+# 后验分布直方图
+hist(psi_chain_burned, breaks = 50, prob = TRUE,
+     main = "psi的后验分布", xlab = "psi = p/(1-p)")
+# 理论期望（E[psi] = alpha/(beta-1)，当beta>1）
+true_mean <- 5 / (432 - 1)
+abline(v = true_mean, col = "red", lwd = 2)
+legend("topright", legend = paste("理论期望:", round(true_mean, 5)), 
+       col = "red", lwd = 2)
+```
+
+### 14.1
+```{r echo=FALSE}
+library(lpSolve)
+# 目标函数：4x + 2y + 9z（最小化）
+obj <- c(4, 2, 9)
+
+# 约束矩阵
+const.mat <- matrix(
+  c(2, 1, 1,  # 第一个约束：2x + y + z
+    1, -1, 3  # 第二个约束：x - y + 3z
+  ), 
+  nrow = 2, byrow = TRUE
+)
+
+# 约束方向（均为“<=”）
+const.dir <- c("<=", "<=")
+
+# 约束右侧值
+const.rhs <- c(2, 3)
+
+# 求解线性规划
+lp_result <- lp(
+  direction = "min",    # 最小化目标函数
+  objective.in = obj,
+  const.mat = const.mat,
+  const.dir = const.dir,
+  const.rhs = const.rhs
+)
+
+# 输出结果
+cat("最优目标函数值：", lp_result$objval, "\n")
+cat("最优解(x, y, z)：", lp_result$solution, "\n")
+cat("收敛状态（0=成功）：", lp_result$status, "\n")
+```

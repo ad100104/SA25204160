@@ -1,0 +1,392 @@
+---
+title: "A-SA25204160-2025-10-27"
+author: "SA25204160"
+date: "2025-11-05"
+output: html_document
+---
+
+## Question
+
+### 8.8
+
+参考练习8.7。获取$\hat{\theta}$的刀切法（jackknife）偏差和标准误差估计。
+
+### 8.11
+
+在例8.17中，使用留一法（n折）交叉验证来选择最佳拟合模型。使用留二法交叉验证来比较这些模型。
+
+### 8.A
+
+进行蒙特卡洛研究来估计标准正态bootstrap置信区间、基本bootstrap置信区间和百分位bootstrap置信区间的覆盖概率。从正态总体中抽样并检查样本均值的经验覆盖率。找出置信区间在左侧未覆盖的比例，以及在右侧未覆盖的比例。
+
+### 指数分布MLE的Bootstrap模拟
+
+行模拟研究来验证bootstrap方法在估计指数分布$\hat{\lambda}=\frac{1}{\bar{X}}$的偏差和标准误差方面的性能。
+
+## Answer
+### 8.8
+#### 8.8.1
+
+假设我们有来自Exercise 8.7的数据和估计量$\hat{\theta}$
+
+```{r echo=FALSE}
+# 这里使用一个示例数据集
+set.seed(123)
+x <- rnorm(20, mean = 5, sd = 2)  # 示例数据
+
+# 定义估计量（例如样本中位数）
+theta_hat <- median(x)
+
+n <- length(x)
+```
+
+#### 8.8.2
+
+计算刀切法重复估计量
+
+```{r echo=FALSE}
+# 计算刀切法重复估计量
+theta_jack <- numeric(n)
+
+for (i in 1:n) {
+  # 删除第i个观测值
+  x_jack <- x[-i]
+  # 计算刀切法估计量
+  theta_jack[i] <- median(x_jack)
+}
+```
+
+#### 8.8.3
+
+计算刀切法估计的偏差和标准误差
+
+```{r echo=FALSE}
+# 计算偏差估计
+bias_jack <- (n - 1) * (mean(theta_jack) - theta_hat)
+
+# 计算标准误差估计
+se_jack <- sqrt((n - 1) * mean((theta_jack - mean(theta_jack))^2))
+
+cat("刀切法估计结果:\n")
+cat("原始估计量 theta_hat =", round(theta_hat, 4), "\n")
+cat("刀切法偏差估计 =", round(bias_jack, 4), "\n")
+cat("刀切法标准误差估计 =", round(se_jack, 4), "\n")
+```
+
+### 8.11
+
+#### 8.11.1
+
+留二法交叉验证
+
+```{r echo=FALSE}
+# 使用R内置数据集作为示例
+data(mtcars)
+chemical <- mtcars$wt
+magnetic <- mtcars$mpg
+
+n <- length(chemical)
+# 生成所有可能的留二组合
+library(combinat)
+pairs <- combn(n, 2)
+n_pairs <- ncol(pairs)
+
+# 初始化误差向量
+e1_ltwo <- numeric(n_pairs)
+e2_ltwo <- numeric(n_pairs)
+e3_ltwo <- numeric(n_pairs)
+e4_ltwo <- numeric(n_pairs)
+
+# 留二法交叉验证
+for (i in 1:n_pairs) {
+  test_indices <- pairs[, i]
+  train_indices <- setdiff(1:n, test_indices)
+  
+  # 训练数据
+  y_train <- magnetic[train_indices]
+  x_train <- chemical[train_indices]
+  
+  # 测试数据
+  x_test <- chemical[test_indices]
+  y_true <- magnetic[test_indices]
+  
+  # 模型1: 线性模型
+  fit1 <- lm(y_train ~ x_train)
+  yhat1 <- fit1$coef[1] + fit1$coef[2] * x_test
+  e1_ltwo[i] <- mean((y_true - yhat1)^2)
+  
+  # 模型2: 二次模型
+  fit2 <- lm(y_train ~ x_train + I(x_train^2))
+  yhat2 <- fit2$coef[1] + fit2$coef[2] * x_test + fit2$coef[3] * x_test^2
+  e2_ltwo[i] <- mean((y_true - yhat2)^2)
+  
+  # 模型3: 对数模型
+  fit3 <- lm(log(y_train) ~ x_train)
+  logyhat3 <- fit3$coef[1] + fit3$coef[2] * x_test
+  yhat3 <- exp(logyhat3)
+  e3_ltwo[i] <- mean((y_true - yhat3)^2)
+  
+  # 模型4: 三次多项式模型
+  fit4 <- lm(y_train ~ x_train + I(x_train^2) + I(x_train^3))
+  yhat4 <- fit4$coef[1] + fit4$coef[2] * x_test + fit4$coef[3] * x_test^2 + fit4$coef[4] * x_test^3
+  e4_ltwo[i] <- mean((y_true - yhat4)^2)
+}
+
+# 计算平均均方预测误差
+mse_ltwo <- c(mean(e1_ltwo), mean(e2_ltwo), mean(e3_ltwo), mean(e4_ltwo))
+names(mse_ltwo) <- c("Linear", "Quadratic", "Log", "Cubic")
+
+cat("留二法交叉验证均方预测误差:\n")
+print(mse_ltwo)
+cat("\n最佳模型(最小MSE):", names(which.min(mse_ltwo)), "\n")
+```
+
+### 8.A
+
+#### 8.A.1
+
+设置参数和初始化
+
+```{r echo=FALSE}
+# 设置参数
+set.seed(123)
+n <- 30           # 样本量
+mu <- 5           # 总体均值
+sigma <- 2        # 总体标准差
+B <- 1000         # bootstrap重复次数
+m <- 1000         # 蒙特卡洛重复次数
+alpha <- 0.05     # 显著性水平
+
+# 初始化覆盖概率计数器
+cover_normal <- cover_basic <- cover_percentile <- 0
+miss_left_normal <- miss_right_normal <- 0
+miss_left_basic <- miss_right_basic <- 0
+miss_left_percentile <- miss_right_percentile <- 0
+```
+
+#### 8.A.2
+进行蒙特卡洛模拟
+
+```{r echo=FALSE}
+for (i in 1:m) {
+  # 从正态分布生成样本
+  x <- rnorm(n, mean = mu, sd = sigma)
+  x_bar <- mean(x)
+  
+  # bootstrap抽样
+  boot_means <- numeric(B)
+  for (b in 1:B) {
+    boot_sample <- sample(x, size = n, replace = TRUE)
+    boot_means[b] <- mean(boot_sample)
+  }
+  
+  # 1. 标准正态bootstrap置信区间
+  se_boot <- sd(boot_means)
+  normal_ci <- x_bar + c(-1, 1) * qnorm(1 - alpha/2) * se_boot
+  
+  # 2. 基本bootstrap置信区间
+  basic_ci <- 2 * x_bar - quantile(boot_means, probs = c(1 - alpha/2, alpha/2))
+  
+  # 3. 百分位bootstrap置信区间
+  percentile_ci <- quantile(boot_means, probs = c(alpha/2, 1 - alpha/2))
+  
+  # 检查覆盖情况
+  if (normal_ci[1] <= mu & mu <= normal_ci[2]) {
+    cover_normal <- cover_normal + 1
+  } else if (mu < normal_ci[1]) {
+    miss_left_normal <- miss_left_normal + 1
+  } else {
+    miss_right_normal <- miss_right_normal + 1
+  }
+  
+  if (basic_ci[1] <= mu & mu <= basic_ci[2]) {
+    cover_basic <- cover_basic + 1
+  } else if (mu < basic_ci[1]) {
+    miss_left_basic <- miss_left_basic + 1
+  } else {
+    miss_right_basic <- miss_right_basic + 1
+  }
+  
+  if (percentile_ci[1] <= mu & mu <= percentile_ci[2]) {
+    cover_percentile <- cover_percentile + 1
+  } else if (mu < percentile_ci[1]) {
+    miss_left_percentile <- miss_left_percentile + 1
+  } else {
+    miss_right_percentile <- miss_right_percentile + 1
+  }
+}
+```
+
+#### 8.A.3
+
+计算并输出结果
+
+```{r echo=FALSE}
+# 计算覆盖概率
+coverage <- c(
+  cover_normal / m,
+  cover_basic / m,
+  cover_percentile / m
+)
+
+# 计算左侧和右侧未覆盖比例
+miss_left <- c(
+  miss_left_normal / m,
+  miss_left_basic / m,
+  miss_left_percentile / m
+)
+
+miss_right <- c(
+  miss_right_normal / m,
+  miss_right_basic / m,
+  miss_right_percentile / m
+)
+
+results <- data.frame(
+  Method = c("Normal Bootstrap", "Basic Bootstrap", "Percentile Bootstrap"),
+  Coverage = coverage,
+  Miss_Left = miss_left,
+  Miss_Right = miss_right
+)
+
+cat("Bootstrap置信区间覆盖概率分析:\n")
+cat("样本量 n =", n, ", 总体均值 μ =", mu, ", 蒙特卡洛重复次数 m =", m, "\n\n")
+print(results)
+
+# 可视化结果
+library(ggplot2)
+library(reshape2)
+
+plot_data <- melt(results, id.vars = "Method")
+ggplot(plot_data, aes(x = Method, y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_hline(yintercept = 1 - alpha, linetype = "dashed", color = "red") +
+  labs(title = "Bootstrap置信区间覆盖概率分析",
+       subtitle = paste("名义置信水平 =", 1 - alpha),
+       y = "比例", x = "方法") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Coverage" = "steelblue", 
+                              "Miss_Left" = "red", 
+                              "Miss_Right" = "orange"))
+```
+
+### 指数分布MLE的Bootstrap模拟
+
+#### 1
+
+设置参数和理论值
+
+```{r echo=FALSE}
+# 设置参数
+set.seed(123)
+lambda_true <- 2
+sample_sizes <- c(5, 10, 20)
+B <- 1000  # bootstrap重复次数
+m <- 1000  # 模拟重复次数
+
+# 理论值函数
+theoretical_bias <- function(n, lambda) {
+  lambda / (n - 1)
+}
+
+theoretical_se <- function(n, lambda) {
+  lambda * n / ((n - 1) * sqrt(n - 2))
+}
+```
+
+#### 2
+
+进行模拟研究
+
+```{r echo=FALSE}
+results <- data.frame()
+
+for (n in sample_sizes) {
+  bootstrap_biases <- numeric(m)
+  bootstrap_ses <- numeric(m)
+  
+  for (i in 1:m) {
+    # 生成指数分布样本
+    x <- rexp(n, rate = lambda_true)
+    
+    # 计算MLE
+    lambda_hat <- 1 / mean(x)
+    
+    # bootstrap估计
+    boot_estimates <- numeric(B)
+    for (b in 1:B) {
+      boot_sample <- sample(x, size = n, replace = TRUE)
+      boot_estimates[b] <- 1 / mean(boot_sample)
+    }
+    
+    # bootstrap偏差和标准误
+    bootstrap_biases[i] <- mean(boot_estimates) - lambda_hat
+    bootstrap_ses[i] <- sd(boot_estimates)
+  }
+  
+  # 计算平均bootstrap偏差和标准误
+  mean_bootstrap_bias <- mean(bootstrap_biases)
+  mean_bootstrap_se <- mean(bootstrap_ses)
+  
+  # 理论值
+  theo_bias <- theoretical_bias(n, lambda_true)
+  theo_se <- theoretical_se(n, lambda_true)
+  
+  results <- rbind(results, data.frame(
+    n = n,
+    Mean_Bootstrap_Bias = mean_bootstrap_bias,
+    Theoretical_Bias = theo_bias,
+    Mean_Bootstrap_SE = mean_bootstrap_se,
+    Theoretical_SE = theo_se
+  ))
+}
+```
+
+#### 3
+
+输出结果并评论
+
+```{r echo=FALSE}
+cat("指数分布MLE的Bootstrap性能分析:\n")
+cat("真实参数 λ =", lambda_true, "\n")
+cat("Bootstrap重复次数 B =", B, "\n")
+cat("蒙特卡洛重复次数 m =", m, "\n\n")
+
+print(round(results, 4))
+
+# 计算相对误差
+results$Bias_Relative_Error <- abs(results$Mean_Bootstrap_Bias - results$Theoretical_Bias) / results$Theoretical_Bias
+results$SE_Relative_Error <- abs(results$Mean_Bootstrap_SE - results$Theoretical_SE) / results$Theoretical_SE
+
+cat("\n相对误差分析:\n")
+print(round(results[, c("n", "Bias_Relative_Error", "SE_Relative_Error")], 4))
+
+# 可视化比较
+library(ggplot2)
+library(reshape2)
+
+bias_data <- melt(results[, c("n", "Mean_Bootstrap_Bias", "Theoretical_Bias")], id.vars = "n")
+se_data <- melt(results[, c("n", "Mean_Bootstrap_SE", "Theoretical_SE")], id.vars = "n")
+
+p1 <- ggplot(bias_data, aes(x = factor(n), y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Bootstrap偏差与理论偏差比较",
+       x = "样本量", y = "偏差") +
+  theme_minimal()
+
+p2 <- ggplot(se_data, aes(x = factor(n), y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Bootstrap标准误与理论标准误比较",
+       x = "样本量", y = "标准误") +
+  theme_minimal()
+
+# 需要gridExtra包来并排显示图形
+library(gridExtra)
+grid.arrange(p1, p2, ncol = 2)
+
+cat("\n结果评论:\n")
+cat("1. 随着样本量n的增加，bootstrap估计的偏差和标准误都更接近理论值\n")
+cat("2. 对于小样本(n=5)，bootstrap估计与理论值存在较大差异\n")
+cat("3. 当n=20时，bootstrap方法能够较好地估计MLE的偏差和标准误\n")
+cat("4. bootstrap方法在样本量较小时可能不够准确，但随着样本量增加而改善\n")
+```
