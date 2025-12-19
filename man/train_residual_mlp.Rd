@@ -2,18 +2,19 @@
 % Please edit documentation in R/model_functions.R
 \name{train_residual_mlp}
 \alias{train_residual_mlp}
-\title{【核心逻辑版】金融数据MLP残差模型训练（无加速，仅保留核心训练逻辑）}
+\title{MLP Residual Model Training for Financial Data}
 \usage{
 train_residual_mlp(preprocessed_data, target_col)
 }
 \arguments{
-\item{preprocessed_data}{预处理后的数据集（数据框，包含特征列和目标列）}
+\item{preprocessed_data}{Preprocessed dataset (data frame, contains feature columns and target column)}
 
-\item{target_col}{目标列名（字符）}
+\item{target_col}{Target column name (character)}
 }
 \value{
-训练好的模型对象（保留原本的模型返回逻辑）
+Trained model object
 }
 \description{
-【核心逻辑版】金融数据MLP残差模型训练（无加速，仅保留核心训练逻辑）
+This function trains a residual MLP model for financial data.
+Note: The torch package is required for this function to work.
 }

@@ -1,10 +1,10 @@
 ---
-title: "SA25204160: 函数使用指南"
+title: "Function Usage Guide"
 author: "Andong Jiao"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{函数使用指南}
+  %\VignetteIndexEntry{Function Usage Guide}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -20,8 +20,8 @@ vignette: >
 ### 从GitHub安装（最终发布后生效）
 ```{r}
 # 需先安装依赖包（已在DESCRIPTION声明，会自动下载）
-install.packages(c("devtools", "torch", "dplyr"))
-devtools::install_github("ad100104/SA25204160", build_vignettes = TRUE)
+#install.packages(c("devtools", "torch", "dplyr"))
+#devtools::install_github("ad100104/SA25204160", build_vignettes = TRUE)
 library(SA25204160)
 ```
 

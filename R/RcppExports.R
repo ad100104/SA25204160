@@ -7,6 +7,6 @@
 #' @return 列表：各列的0.01、0.5、0.99分位数（命名为q01, q50, q99，增强可读性）
 #' @export
 cpp_quantile_calc <- function(df, feature_cols) {
-    .Call(`_SA25204160_cpp_quantile_calc`, df, feature_cols)
+    .Call('_SA25204160_cpp_quantile_calc', PACKAGE = 'SA25204160', df, feature_cols)
 }
 
