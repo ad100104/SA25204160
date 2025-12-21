@@ -2522,28 +2522,31 @@ max_iter <- 1000     # 最大迭代次数（防止无限循环）
 
 #### (1) 直接极大化似然函数（MLE 直接法）
 利用指数分布区间删失数据的对数似然函，数通过数值优化（L-BFGS-B 算法，支持下界约束 λ>0）最大化该函数。
-```{r eval=FALSE}
-# 1. 定义对数似然函数（注意：optim默认最小化，因此返回负对数似然）
+```{r neg_log_likelihood_code, eval=FALSE}
+# 注意：以下代码依赖预先定义的变量lambda_init（初始值）、u/v（区间数据）
+# 1. 定义对数似然函数（optim默认最小化，因此返回负对数似然）
 neg_log_likelihood <- function(lambda) {
-  if (lambda <= 0) return(Inf)  # 避免λ≤0导致数值错误
-  # 计算每个观测的区间概率对数
+  if (lambda <= 0) return(Inf)  # 避免λ≤0导致数值错误（指数分布参数λ>0）
+  # 计算每个观测的区间概率对数（假设u是左区间、v是右区间）
   log_prob <- log(exp(-lambda * u) - exp(-lambda * v))
   -sum(log_prob)  # 返回负对数似然（供optim最小化）
 }
 
-# 2. 数值优化求解MLE（L-BFGS-B算法，下界lambda>0）
+# 2. 数值优化求解MLE（L-BFGS-B算法，带边界约束）
 direct_mle <- optim(
-  par = lambda_init,          # 初始值
-  fn = neg_log_likelihood,    # 目标函数（负对数似然）
-  method = "L-BFGS-B",        # 带边界约束的优化方法
+  par = lambda_init,          # 初始值（需预先定义，如lambda_init = 1）
+  fn = neg_log_likelihood,    # 目标函数：负对数似然
+  method = "L-BFGS-B",        # 带边界约束的优化方法（适合单变量有下界）
   lower = 1e-10,              # λ的下界（接近0，避免数值问题）
-  control = list(trace = 1)   # trace=1显示优化过程（可选）
+  control = list(trace = 1)   # trace=1显示优化过程（可选，便于调试）
 )
 
 # 3. 提取直接法结果
 lambda_direct <- direct_mle$par  # 直接法MLE估计值
-converge_direct <- direct_mle$convergence  # 收敛状态（0=收敛）
+converge_direct <- direct_mle$convergence  # 收敛状态（0=收敛成功）
 iter_direct <- direct_mle$counts[1]        # 优化迭代次数
+
+# 输出结果
 cat("=== 直接极大化似然法结果 ===\n")
 cat("λ的MLE估计值：", round(lambda_direct, 6), "\n")
 cat("收敛状态（0=成功）：", converge_direct, "\n")
