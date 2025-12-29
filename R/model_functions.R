@@ -21,7 +21,7 @@ cpp_quantile_calc <- function(df, feature_cols) {
 #' This function trains a residual MLP model for financial data.
 #' Note: The torch package is required for this function to work.
 #'
-#' @name train_residual_mlp  # 新增：补充@name字段，与函数名一致
+#' @name train_residual_mlp  # 仅保留纯函数名，无特殊字符
 #' @param preprocessed_data Preprocessed dataset (data frame, contains feature columns and target column)
 #' @param target_col Target column name (character)
 #' @return Trained model object

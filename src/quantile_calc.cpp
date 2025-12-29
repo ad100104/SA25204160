@@ -1,16 +1,17 @@
 #include <Rcpp.h>
 #include <vector>
 #include <algorithm>
-#include <cmath> // 用于round函数，优化分位数索引计算
+#include <cmath>
 using namespace Rcpp;
 
-//' 【核心逻辑版】Rcpp分位数计算（无加速，仅保留0.01、0.5、0.99分位数计算）
-//' @name cpp_quantile_calc  // 新增：补充@name字段，与函数名严格一致
+//' Rcpp分位数计算（无加速，仅保留0.01、0.5、0.99分位数计算）
+//'
+//' @name cpp_quantile_calc 
 //' @param df 数据框（仅包含数值列）
 //' @param feature_cols 需计算分位数的列名（字符向量）
-//' @return 列表：各列的0.01、0.5、0.99分位数（命名为q01, q50, q99，增强可读性）
+//' @return 列表：各列的0.01、0.5、0.99分位数（命名为q01, q50, q99）
 //' @export
-// [[Rcpp::export]] // 关键：保留默认的Rcpp导出宏，不添加冗余的name参数（自动生成导出文件的核心）
+// [[Rcpp::export]]
 List cpp_quantile_calc(DataFrame df, CharacterVector feature_cols) {
   // 初始化结果存储，长度与特征列一致
   List result(feature_cols.size());
