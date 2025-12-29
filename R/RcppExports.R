@@ -2,6 +2,7 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 #' 【核心逻辑版】Rcpp分位数计算（无加速，仅保留0.01、0.5、0.99分位数计算）
+#' @name cpp_quantile_calc  // 新增：补充@name字段，与函数名严格一致
 #' @param df 数据框（仅包含数值列）
 #' @param feature_cols 需计算分位数的列名（字符向量）
 #' @return 列表：各列的0.01、0.5、0.99分位数（命名为q01, q50, q99，增强可读性）
